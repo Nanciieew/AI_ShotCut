@@ -1,0 +1,17 @@
+# Development & testing dependencies
+# Install: pip install -r requirements/dev.txt
+
+-r api.txt
+
+# --- Testing ---
+pytest==8.3.*
+pytest-asyncio==0.24.*
+pytest-cov==6.0.*
+httpx==0.28.*
+
+# --- Code Quality ---
+ruff==0.6.*
+mypy==1.13.*
+
+# --- Pre-commit ---
+pre-commit==4.0.*

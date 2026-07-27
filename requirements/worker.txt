@@ -1,0 +1,13 @@
+# Worker-specific dependencies
+# Install: pip install -r requirements/worker.txt
+
+-r base.txt
+
+# --- Task Queue ---
+celery[redis]==5.4.*
+
+# --- Video Processing ---
+ffmpeg-python==0.2.*
+
+# --- Database (production driver) ---
+asyncpg==0.30.*

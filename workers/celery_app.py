@@ -1,14 +1,13 @@
 """
 Celery application factory.
 
-Loads configuration from configs/celery.yaml and environment variables.
+Loads configuration from environment variables.
 All long-running tasks (FFmpeg, model inference, feature extraction)
 MUST be executed as Celery tasks, never synchronously in an HTTP request.
 """
 
 import os
 from celery import Celery
-from celery.signals import worker_ready, worker_shutdown
 
 _app: Celery | None = None
 
@@ -31,10 +30,11 @@ def create_celery_app() -> Celery:
             "workers.tasks.feature_tasks",
             "workers.tasks.scene_tasks",
             "workers.tasks.final_tasks",
+            "workers.tasks.maintenance_tasks",
         ],
     )
 
-    # --- Core settings (from configs/celery.yaml defaults) ---
+    # --- Core settings ---
     app.conf.update(
         task_serializer="json",
         result_serializer="json",
@@ -46,12 +46,27 @@ def create_celery_app() -> Celery:
         task_reject_on_worker_lost=True,
         worker_prefetch_multiplier=1,
         broker_connection_retry_on_startup=True,
-        task_soft_time_limit=3600,   # 1 hour soft limit
-        task_time_limit=7200,        # 2 hour hard limit
-        result_expires=3600,         # purge results after 1 hour
+        task_soft_time_limit=3600,
+        task_time_limit=7200,
+        result_expires=3600,
         worker_concurrency=1,
         worker_max_tasks_per_child=50,
     )
+
+    # --- Task routing: dedicated queues ---
+    app.conf.task_routes = {
+        "workers.tasks.video_tasks.*": {"queue": "video"},
+        "workers.tasks.shot_tasks.*": {"queue": "shot"},
+        "workers.tasks.subtitle_tasks.*": {"queue": "subtitle"},
+        "workers.tasks.feature_tasks.*": {"queue": "feature"},
+        "workers.tasks.scene_tasks.*": {"queue": "scene"},
+        "workers.tasks.final_tasks.*": {"queue": "final"},
+        "workers.tasks.maintenance_tasks.*": {"queue": "maintenance"},
+    }
+
+    # --- Task default queue ---
+    app.conf.task_default_queue = "video"
+    app.conf.task_default_routing_key = "video"
 
     _app = app
     return app

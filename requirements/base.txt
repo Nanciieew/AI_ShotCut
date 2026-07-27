@@ -1,0 +1,23 @@
+# Core shared dependencies
+# Used by: API, Worker, and all model environments
+
+# --- Data Validation ---
+pydantic==2.10.*
+pydantic-settings==2.7.*
+
+# --- Database ---
+sqlalchemy[asyncio]==2.0.*
+alembic==1.14.*
+
+# --- Redis ---
+redis==5.2.*
+
+# --- Configuration ---
+pyyaml==6.0.*
+python-dotenv==1.0.*
+
+# --- Structured Logging ---
+structlog==24.4.*
+
+# --- Utilities ---
+typing-extensions==4.12.*

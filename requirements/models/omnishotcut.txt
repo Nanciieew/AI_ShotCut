@@ -1,0 +1,10 @@
+# OmniShotCut model dependencies (placeholder)
+# Install when this model is enabled in registry:
+#   pip install -r requirements/models/omnishotcut.txt
+
+-r ../worker.txt
+
+# TODO: Add actual OmniShotCut dependencies after repository review
+# torch>=2.0
+# torchvision>=0.15
+# opencv-python>=4.8

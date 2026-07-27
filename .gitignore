@@ -29,7 +29,8 @@ Thumbs.db
 
 # --- Project: Data & Storage ---
 data/
-!data/.gitkeep
+!data/projects/.gitkeep
+!data/tmp/.gitkeep
 
 # --- Project: Model Weights ---
 model_store/*

@@ -221,17 +221,49 @@ broker_connection_retry_on_startup = True
 
 ---
 
-## 12. 配置管理
+## 12. 基础设施规则
+
+### 数据库迁移
+- 修改 ORM 模型后必须创建 Alembic Migration（`alembic revision --autogenerate`）
+- 禁止仅依赖 `Base.metadata.create_all()` 作为正式迁移方案
+- 迁移文件必须可升级和可回滚
+
+### 模型接入
+- 新增模型前必须在 `models/registry.yaml` 中登记
+- 包括：task、repository、revision、code_license、weights_license、commercial_use
+- License 状态未核验时标记 `unknown`，不得猜测
+- 模型启用前 `enabled: false`
+
+### Artifact 管理
+- 每个主要 Artifact 必须生成伴随 `.manifest.json`（使用 `core/artifacts/writer.py`）
+- Artifact 先写临时文件，再原子重命名
+- 数据库记录与 Manifest 中的 ID 保持一致
+
+### Worker Queue
+- 7 个独立 Queue：video, shot, subtitle, feature, scene, final, maintenance
+- CPU 任务（video, final, maintenance）与 GPU 任务（shot, subtitle, feature, scene）分开
+- Celery Task 不传输视频、Tensor 或大型数组，只传 ID/URI/JSON
+
+## 13. 配置管理
 
 - 禁止写死路径或配置
-- 统一使用配置文件（`configs/*.yaml`）+ 环境变量（`.env`）
+- 统一使用 `core/config.py` Settings 类 + `configs/*.yaml` + 环境变量
+- 启动时校验关键配置，缺失时快速失败
 - `.env` 必须加入 `.gitignore`
 - 环境变量模板在 `.env.example`
+- Production 不允许弱默认密码
+
+## 14. 代码质量
+
+- CI 必须通过：Ruff lint、Ruff format、MyPy、Pytest、Alembic migration check
+- `third_party/` 和 `model_store/` 排除在 lint 范围之外
+- 使用 `scripts/dev/check.py` 运行全部检查
 
 ---
 
-## 13. 更新记录
+## 15. 更新记录
 
 | 日期 | 修改内容 | 原因 |
 |------|----------|------|
 | 2026-07-27 | 初始创建 | 项目基础工程搭建，确立架构宪法 |
+| 2026-07-27 | 新增基础设施规则 | 后端结构补全：Alembic、Registry、Manifest、Queue、Settings |

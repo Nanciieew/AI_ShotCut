@@ -1,0 +1,9 @@
+# Scene Boundary model dependencies (placeholder)
+# Install when this model is enabled in registry:
+#   pip install -r requirements/models/scene_boundary.txt
+
+-r ../worker.txt
+
+# TODO: Add actual Scene Boundary dependencies after repository review
+# torch>=2.0
+# transformers>=4.40

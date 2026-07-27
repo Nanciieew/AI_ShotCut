@@ -13,46 +13,84 @@
 
 ## 快速启动
 
-### 1. 克隆并配置环境
+### 1. 环境配置
 
 ```bash
 cp .env.example .env
-# 编辑 .env 填入实际值（开发环境可使用默认值）
+# 编辑 .env（开发环境可使用默认值）
 ```
 
 ### 2. 安装依赖
 
 ```bash
+# 完整开发环境
 pip install -r requirements.txt
+
+# 仅 API
+pip install -r requirements/api.txt
+
+# 仅 Worker
+pip install -r requirements/worker.txt
 ```
 
-### 3. 启动服务
+### 3. Docker Compose 启动
 
 ```bash
-# 启动 Redis、PostgreSQL、API、Worker
-docker-compose up -d
+# 启动全部服务（PostgreSQL > Redis > migrate > API + Worker）
+docker compose up -d
 
-# 或者本地开发模式（需要本地 Redis）
+# 仅启动基础设施
+docker compose up -d postgres redis
+
+# 查看日志
+docker compose logs -f api
+docker compose logs -f worker
+
+# 停止
+docker compose down
+```
+
+### 4. 数据库迁移
+
+```bash
+# 生成迁移文件
+alembic revision --autogenerate -m "description"
+
+# 执行迁移
+alembic upgrade head
+
+# 回滚
+alembic downgrade -1
+
+# 查看当前版本
+alembic current
+
+# 查看历史
+alembic history
+```
+
+### 5. 本地开发（无 Docker）
+
+```bash
+# 启动 Redis
 redis-server &
-celery -A workers.celery_app worker --loglevel=info &
-uvicorn apps.api.main:app --reload
-```
 
-### 4. 初始化数据库
-
-```bash
+# 初始化数据库
 python scripts/initialize_database.py
-```
 
-### 5. 检查环境
+# 启动 Celery Worker
+celery -A workers.celery_app worker --loglevel=info -Q video,shot,subtitle,feature,scene,final,maintenance &
 
-```bash
-python scripts/check_environment.py
+# 启动 API
+uvicorn apps.api.main:app --reload
 ```
 
 ### 6. 验证
 
 ```bash
+# 健康检查
+curl http://localhost:8000/health/live
+curl http://localhost:8000/health/ready
 curl http://localhost:8000/health
 ```
 
@@ -60,22 +98,71 @@ curl http://localhost:8000/health
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/health` | 健康检查 |
+| `GET` | `/health/live` | 存活检查（进程） |
+| `GET` | `/health/ready` | 就绪检查（DB+Redis+Storage+FFmpeg+Celery） |
+| `GET` | `/health` | 兼容旧版，等同 `/health/ready` |
 | `POST` | `/api/v1/videos` | 上传视频 |
 | `GET` | `/api/v1/videos/{id}` | 获取视频信息 |
 | `POST` | `/api/v1/videos/{id}/analysis` | 启动分析 |
 | `GET` | `/api/v1/tasks/{id}` | 查询任务状态 |
 | `GET` | `/api/v1/videos/{id}/results` | 获取分析结果 |
+| `GET` | `/api/v1/models/{name}/health` | 模型健康检查（预留） |
+
+## Worker Queue 路由
+
+| Queue | 任务类型 | Device |
+|-------|----------|--------|
+| `video` | FFmpeg 预处理、标准化 | CPU |
+| `shot` | Shot Boundary Detection | GPU |
+| `subtitle` | Whisper 转录 | GPU |
+| `feature` | 视觉/音频特征提取 | GPU |
+| `scene` | Scene Boundary + Score | GPU |
+| `final` | 结果组装 | CPU |
+| `maintenance` | 临时文件清理 | CPU |
+
+## 开发命令
+
+```bash
+python scripts/dev/start.py           # 启动全部服务
+python scripts/dev/stop.py            # 停止全部服务
+python scripts/dev/check.py           # lint + type + test
+python scripts/dev/lint.py            # ruff check + format
+python scripts/dev/test.py            # pytest
+python scripts/dev/migrate.py upgrade # 数据库迁移
+```
+
+## 代码质量
+
+```bash
+ruff check .
+ruff format --check .
+mypy .
+pytest
+pytest --cov
+pre-commit run --all-files
+```
 
 ## 项目结构
 
-参见 [多模型视频分析后端架构与实施规范](多模型视频分析后端架构与实施规范.md)。
+```
+apps/api/         — FastAPI 路由、依赖、Schema
+core/             — 数据库、存储、异常、Artifact、日志、配置
+models/           — 模型适配器 + Registry
+workers/          — Celery 应用 + 7 任务队列
+schemas/          — 统一数据 Schema（v1）
+pipelines/        — 编排层
+configs/          — YAML 配置
+scripts/dev/      — 开发命令
+alembic/          — 数据库迁移
+tests/            — 测试 + Fixtures
+requirements/     — 分层依赖
+```
 
 ## 开发规范
 
-- 开始任务前阅读 [CLAUDE.md](CLAUDE.md)
-- 问题与改进跟踪在 [IMPROVEMENTS.md](IMPROVEMENTS.md)
-- 模型接入遵守 [输入输出规范.md](输入输出规范.md)
+- **开始前**：阅读 [CLAUDE.md](CLAUDE.md) → 查找 [IMPROVEMENTS.md](IMPROVEMENTS.md) 对应 IMP
+- **模型接入**：遵守 [IO_Rule.md](IO_Rule.md) + [项目图纸.md](项目图纸.md)
+- **禁止**：`action_score`、`plot_score`、API 内长推理、Redis 存大文件、覆盖旧 Artifact
 
 ## License
 

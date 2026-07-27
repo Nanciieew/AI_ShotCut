@@ -1,0 +1,11 @@
+# Alembic — Database Migrations
+#
+# Core commands:
+#   alembic revision --autogenerate -m "description"
+#   alembic upgrade head
+#   alembic downgrade -1
+#   alembic current
+#   alembic history
+#
+# The database URL is read from DATABASE_URL environment variable.
+# Supports both PostgreSQL (production) and SQLite (development).

@@ -1,0 +1,9 @@
+# API-specific dependencies
+# Install: pip install -r requirements/api.txt
+
+-r base.txt
+
+# --- Web Framework ---
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+python-multipart==0.0.*

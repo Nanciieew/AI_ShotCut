@@ -1,0 +1,36 @@
+# ============================================================
+# Worker Queue Configuration — CPU vs GPU split
+# ============================================================
+# MVP: single worker handles all queues.
+# When GPUs and model dependencies diverge, split into two workers.
+
+workers:
+  # CPU worker — lightweight tasks, no GPU required
+  cpu:
+    queues:
+      - video
+      - final
+      - maintenance
+    concurrency: 2
+    soft_time_limit: 1800
+    note: "FFmpeg, file I/O, DB updates, result assembly"
+
+  # GPU worker — model inference tasks
+  gpu:
+    queues:
+      - shot
+      - subtitle
+      - feature
+      - scene
+    concurrency: 1
+    soft_time_limit: 3600
+    note: "OmniShotCut, Whisper, visual/audio encoders, Scene Boundary"
+
+# Startup commands (for reference; actual startup is in docker-compose.yml):
+#
+# MVP (single worker):
+#   celery -A workers.celery_app worker -Q video,shot,subtitle,feature,scene,final,maintenance
+#
+# Future (split):
+#   celery -A workers.celery_app worker -Q video,final,maintenance --concurrency=2 -n cpu@%h
+#   celery -A workers.celery_app worker -Q shot,subtitle,feature,scene --concurrency=1 -n gpu@%h

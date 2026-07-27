@@ -87,6 +87,18 @@ class LocalStorage(BaseStorage):
             f"artifacts/{model_name}/{model_version}/{filename}"
         )
 
+    def uri_to_local_path(self, uri: str) -> Path:
+        """Convert a storage:// URI to an absolute local path.
+
+        Raises ValueError if the URI belongs to a different backend
+        or would escape the storage root.
+        """
+        prefix = "storage://"
+        if not uri.startswith(prefix):
+            raise ValueError(f"Not a storage URI: {uri}")
+        key = uri[len(prefix):]
+        return self._resolve(key)
+
     @staticmethod
     def sha256_hex(data: bytes) -> str:
         return hashlib.sha256(data).hexdigest()
