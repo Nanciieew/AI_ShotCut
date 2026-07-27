@@ -1,0 +1,62 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# --- Virtual Environments ---
+venv/
+.venv/
+env/
+.env
+
+# --- IDE & Editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Project: Environment ---
+.env
+
+# --- Project: Data & Storage ---
+data/
+!data/.gitkeep
+
+# --- Project: Model Weights ---
+model_store/*
+!model_store/README.md
+!model_store/.gitkeep
+
+# --- Project: Media ---
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.wmv
+*.flv
+*.wav
+*.mp3
+*.flac
+*.npy
+*.npz
+
+# --- Testing ---
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Docker ---
+docker-compose.override.yml
+
+# --- Logs ---
+*.log
+logs/

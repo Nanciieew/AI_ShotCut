@@ -1,0 +1,28 @@
+# ============================================================
+# Development Environment Configuration
+# ============================================================
+
+app:
+  name: movie-analysis-platform
+  debug: true
+  api_host: "0.0.0.0"
+  api_port: 8000
+
+database:
+  url: "sqlite+aiosqlite:///./data/app.db"
+  echo_sql: true
+
+redis:
+  url: "redis://localhost:6379/0"
+
+storage:
+  backend: "local"
+  root: "./data"
+
+model_store:
+  root: "./model_store"
+
+logging:
+  level: "DEBUG"
+  format: "structured"
+  output: "stdout"

@@ -1,0 +1,102 @@
+# ============================================================
+# Movie Analysis Platform — Docker Compose
+# ============================================================
+# Development setup with hot-reload for API.
+#
+# Usage:
+#   docker-compose up -d              # Start all services
+#   docker-compose logs -f api        # Follow API logs
+#   docker-compose logs -f worker     # Follow worker logs
+#   docker-compose down               # Stop all services
+
+version: "3.9"
+
+services:
+  # --- FastAPI Application ---
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: movie-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/movie_analysis
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - STORAGE_ROOT=/data
+      - MODEL_STORE_ROOT=/models
+      - DEBUG=true
+    volumes:
+      - .:/app
+      - data-volume:/data
+      - model-store-volume:/models
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # --- Celery Worker ---
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    container_name: movie-worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/movie_analysis
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - STORAGE_ROOT=/data
+      - MODEL_STORE_ROOT=/models
+    volumes:
+      - .:/app
+      - data-volume:/data
+      - model-store-volume:/models
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+    command: celery -A workers.celery_app worker --loglevel=info --concurrency=1
+
+  # --- Redis (Broker + Cache) ---
+  redis:
+    image: redis:7-alpine
+    container_name: movie-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # --- PostgreSQL (Database) ---
+  postgres:
+    image: postgres:16-alpine
+    container_name: movie-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: movie_analysis
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  data-volume:
+  model-store-volume:
+  redis-data:
+  postgres-data:
