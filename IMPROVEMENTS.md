@@ -135,6 +135,45 @@
 
 ---
 
+### IMP-011 — 置信度暴露 + 帧间像素差验证
+
+- **Title**: Engine patch 暴露 softmax 置信度 + frame-diff 误检过滤
+- **Status**: Done
+- **Priority**: P1
+- **Module**: models/omnishotcut
+
+### Completion Log
+
+- **Completed Date**: 2026-07-28
+- **Summary**: Patch engine.py 暴露 softmax 概率 → 发现所有检测 conf > 0.99 无区分力 → 转向帧差方案 → MAD < 5 阈值完美区分真/假切。
+- **Key Findings**:
+  - Softmax 置信度在所有检测上均 > 0.99（含误检），无法用于过滤
+  - 帧间像素差 MAD 真硬切 > 15，假切 < 3，差距 > 一个数量级
+  - MAD < 5 + hist_corr > 0.95 阈值：4/5 视频匹配 ground truth
+- **Acceptance Criteria**:
+  - [x] engine.py patch：`_run_on_numpy` 返回 confidences
+  - [x] merge_predictions 置信度感知合并
+  - [x] `frame_diff.py`：MAD + histogram correlation + filter
+  - [x] run_benchmark.py 集成帧差过滤
+  - [x] 误检全部清除（Hard_Cut_1: 1FP, No_Cut_hard: 3FP）
+  - [x] 真检全部保留
+- **Remaining Issues**: Multiple_Cuts_smooth dissolve 盲区（模型 128×96 固有限制）
+- **Follow-up Improvement IDs**: IMP-012
+
+---
+
+### IMP-012 — OmniShotCut 已知限制
+
+- **Title**: OmniShotCut dissolve/wipes 盲区 — 128×96 分辨率限制
+- **Status**: Proposed
+- **Priority**: P2
+- **Module**: models/omnishotcut
+- **Current Problem**: Dissolve/wipe 转场在 128×96 推理分辨率下完全不可见。Multiple_Cuts_smooth 漏检 4/6 溶解边界。模型虽然定义了 Dissolve/Wipe/Fade 等标签，但从未激活（全部标记为 General）。
+- **Target State**: 接入专用于 dissolve 检测的高分辨率模型，或后处理阶段用多帧像素差滑动窗口检测渐变。
+- **Updated Date**: 2026-07-28
+
+---
+
 ### IMP-010 — OmniShotCut Adapter 实现
 
 - **Title**: OmniShotCut Adapter — 原始输出 → Shot Schema 转换
