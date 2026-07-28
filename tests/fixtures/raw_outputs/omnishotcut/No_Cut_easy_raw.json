@@ -3,16 +3,31 @@
   "fps_num": 30,
   "fps_den": 1,
   "fps": 30.0,
-  "frame_count": 2729,
-  "duration_s": 91.0,
+  "frame_count": -1,
+  "duration_s": -1,
   "mode": "clean_shot",
-  "runtime_s": 37.22,
-  "shot_count": 1,
+  "runtime_s": 37.78,
   "error": null,
+  "shot_count_raw": 1,
+  "shot_count_filtered": 1,
   "raw_ranges": [
     [
       0,
       2729
     ]
-  ]
+  ],
+  "confidences": [
+    {
+      "intra_conf": 0.9990181922912598,
+      "inter_conf": 1.0
+    }
+  ],
+  "filtered_ranges": [
+    [
+      0,
+      2729
+    ]
+  ],
+  "frame_diff_stats": {},
+  "frame_diff_boundaries": []
 }

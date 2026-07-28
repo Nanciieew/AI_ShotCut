@@ -4,12 +4,13 @@
     "fps_num": 30,
     "fps_den": 1,
     "fps": 30.0,
-    "frame_count": 1266,
-    "duration_s": 42.2,
+    "frame_count": -1,
+    "duration_s": -1,
     "mode": "clean_shot",
-    "runtime_s": 17.91,
-    "shot_count": 4,
+    "runtime_s": 17.55,
     "error": null,
+    "shot_count_raw": 4,
+    "shot_count_filtered": 3,
     "raw_ranges": [
       [
         0,
@@ -27,6 +28,66 @@
         871,
         1266
       ]
+    ],
+    "confidences": [
+      {
+        "intra_conf": 0.9991614818572998,
+        "inter_conf": 0.9999997615814209
+      },
+      {
+        "intra_conf": 0.9964894652366638,
+        "inter_conf": 0.9990831613540649
+      },
+      {
+        "intra_conf": 0.9987474679946899,
+        "inter_conf": 0.9999998807907104
+      },
+      {
+        "intra_conf": 0.9978212118148804,
+        "inter_conf": 1.0
+      }
+    ],
+    "filtered_ranges": [
+      [
+        0,
+        456
+      ],
+      [
+        456,
+        871
+      ],
+      [
+        871,
+        1266
+      ]
+    ],
+    "frame_diff_stats": {
+      "mad_min": 2.6,
+      "mad_max": 63.9,
+      "mad_mean": 37.9,
+      "mad_std": 25.9,
+      "false_positive_count": 1,
+      "total_boundaries": 3
+    },
+    "frame_diff_boundaries": [
+      {
+        "frame": 456,
+        "mad": 63.93,
+        "hist_corr": 0.6075,
+        "flagged": false
+      },
+      {
+        "frame": 661,
+        "mad": 2.61,
+        "hist_corr": 0.9993,
+        "flagged": true
+      },
+      {
+        "frame": 871,
+        "mad": 47.25,
+        "hist_corr": 0.2654,
+        "flagged": false
+      }
     ]
   },
   {
@@ -34,12 +95,13 @@
     "fps_num": 30,
     "fps_den": 1,
     "fps": 30.0,
-    "frame_count": 1688,
-    "duration_s": 56.3,
+    "frame_count": -1,
+    "duration_s": -1,
     "mode": "clean_shot",
-    "runtime_s": 23.26,
-    "shot_count": 13,
+    "runtime_s": 23.74,
     "error": null,
+    "shot_count_raw": 13,
+    "shot_count_filtered": 13,
     "raw_ranges": [
       [
         0,
@@ -93,6 +155,196 @@
         1504,
         1688
       ]
+    ],
+    "confidences": [
+      {
+        "intra_conf": 0.9980091452598572,
+        "inter_conf": 0.9999997615814209
+      },
+      {
+        "intra_conf": 0.9871771335601807,
+        "inter_conf": 0.7537351846694946
+      },
+      {
+        "intra_conf": 0.999226450920105,
+        "inter_conf": 1.0
+      },
+      {
+        "intra_conf": 0.99921715259552,
+        "inter_conf": 0.9999995231628418
+      },
+      {
+        "intra_conf": 0.9998722076416016,
+        "inter_conf": 0.9999969005584717
+      },
+      {
+        "intra_conf": 0.992519736289978,
+        "inter_conf": 1.0
+      },
+      {
+        "intra_conf": 0.9996733665466309,
+        "inter_conf": 1.0
+      },
+      {
+        "intra_conf": 0.9989847540855408,
+        "inter_conf": 0.9999973773956299
+      },
+      {
+        "intra_conf": 0.9995974898338318,
+        "inter_conf": 0.9999998807907104
+      },
+      {
+        "intra_conf": 0.9996064305305481,
+        "inter_conf": 0.9999998807907104
+      },
+      {
+        "intra_conf": 0.9986961483955383,
+        "inter_conf": 0.999984860420227
+      },
+      {
+        "intra_conf": 0.9996122717857361,
+        "inter_conf": 1.0
+      },
+      {
+        "intra_conf": 0.9983997941017151,
+        "inter_conf": 1.0
+      }
+    ],
+    "filtered_ranges": [
+      [
+        0,
+        210
+      ],
+      [
+        210,
+        216
+      ],
+      [
+        216,
+        276
+      ],
+      [
+        276,
+        347
+      ],
+      [
+        347,
+        411
+      ],
+      [
+        411,
+        492
+      ],
+      [
+        492,
+        636
+      ],
+      [
+        636,
+        850
+      ],
+      [
+        850,
+        923
+      ],
+      [
+        923,
+        1147
+      ],
+      [
+        1147,
+        1211
+      ],
+      [
+        1211,
+        1504
+      ],
+      [
+        1504,
+        1688
+      ]
+    ],
+    "frame_diff_stats": {
+      "mad_min": 21.6,
+      "mad_max": 68.0,
+      "mad_mean": 47.8,
+      "mad_std": 14.7,
+      "false_positive_count": 0,
+      "total_boundaries": 12
+    },
+    "frame_diff_boundaries": [
+      {
+        "frame": 210,
+        "mad": 21.62,
+        "hist_corr": 0.9838,
+        "flagged": false
+      },
+      {
+        "frame": 216,
+        "mad": 30.64,
+        "hist_corr": 0.9764,
+        "flagged": false
+      },
+      {
+        "frame": 276,
+        "mad": 68.0,
+        "hist_corr": 0.3607,
+        "flagged": false
+      },
+      {
+        "frame": 347,
+        "mad": 59.83,
+        "hist_corr": 0.902,
+        "flagged": false
+      },
+      {
+        "frame": 411,
+        "mad": 59.51,
+        "hist_corr": 0.6007,
+        "flagged": false
+      },
+      {
+        "frame": 492,
+        "mad": 55.61,
+        "hist_corr": 0.8437,
+        "flagged": false
+      },
+      {
+        "frame": 636,
+        "mad": 63.83,
+        "hist_corr": 0.2967,
+        "flagged": false
+      },
+      {
+        "frame": 850,
+        "mad": 47.6,
+        "hist_corr": 0.2924,
+        "flagged": false
+      },
+      {
+        "frame": 923,
+        "mad": 47.46,
+        "hist_corr": 0.9767,
+        "flagged": false
+      },
+      {
+        "frame": 1147,
+        "mad": 48.67,
+        "hist_corr": 0.9738,
+        "flagged": false
+      },
+      {
+        "frame": 1211,
+        "mad": 22.91,
+        "hist_corr": 0.998,
+        "flagged": false
+      },
+      {
+        "frame": 1504,
+        "mad": 48.36,
+        "hist_corr": 0.5754,
+        "flagged": false
+      }
     ]
   },
   {
@@ -100,12 +352,13 @@
     "fps_num": 30,
     "fps_den": 1,
     "fps": 30.0,
-    "frame_count": 1382,
-    "duration_s": 46.1,
+    "frame_count": -1,
+    "duration_s": -1,
     "mode": "clean_shot",
-    "runtime_s": 19.77,
-    "shot_count": 3,
+    "runtime_s": 21.4,
     "error": null,
+    "shot_count_raw": 3,
+    "shot_count_filtered": 3,
     "raw_ranges": [
       [
         0,
@@ -119,6 +372,56 @@
         359,
         1382
       ]
+    ],
+    "confidences": [
+      {
+        "intra_conf": 0.9896535277366638,
+        "inter_conf": 1.0
+      },
+      {
+        "intra_conf": 0.9950778484344482,
+        "inter_conf": 0.9999997615814209
+      },
+      {
+        "intra_conf": 0.9977624416351318,
+        "inter_conf": 0.9999998807907104
+      }
+    ],
+    "filtered_ranges": [
+      [
+        0,
+        312
+      ],
+      [
+        312,
+        359
+      ],
+      [
+        359,
+        1382
+      ]
+    ],
+    "frame_diff_stats": {
+      "mad_min": 15.1,
+      "mad_max": 21.4,
+      "mad_mean": 18.3,
+      "mad_std": 3.2,
+      "false_positive_count": 0,
+      "total_boundaries": 2
+    },
+    "frame_diff_boundaries": [
+      {
+        "frame": 312,
+        "mad": 15.1,
+        "hist_corr": 0.9407,
+        "flagged": false
+      },
+      {
+        "frame": 359,
+        "mad": 21.45,
+        "hist_corr": 0.9806,
+        "flagged": false
+      }
     ]
   },
   {
@@ -126,30 +429,46 @@
     "fps_num": 30,
     "fps_den": 1,
     "fps": 30.0,
-    "frame_count": 2729,
-    "duration_s": 91.0,
+    "frame_count": -1,
+    "duration_s": -1,
     "mode": "clean_shot",
-    "runtime_s": 37.22,
-    "shot_count": 1,
+    "runtime_s": 37.78,
     "error": null,
+    "shot_count_raw": 1,
+    "shot_count_filtered": 1,
     "raw_ranges": [
       [
         0,
         2729
       ]
-    ]
+    ],
+    "confidences": [
+      {
+        "intra_conf": 0.9990181922912598,
+        "inter_conf": 1.0
+      }
+    ],
+    "filtered_ranges": [
+      [
+        0,
+        2729
+      ]
+    ],
+    "frame_diff_stats": {},
+    "frame_diff_boundaries": []
   },
   {
     "video": "No_Cut_hard.mp4",
     "fps_num": 30,
     "fps_den": 1,
     "fps": 30.0,
-    "frame_count": 2718,
-    "duration_s": 90.6,
+    "frame_count": -1,
+    "duration_s": -1,
     "mode": "clean_shot",
-    "runtime_s": 39.01,
-    "shot_count": 4,
+    "runtime_s": 40.5,
     "error": null,
+    "shot_count_raw": 4,
+    "shot_count_filtered": 1,
     "raw_ranges": [
       [
         0,
@@ -167,6 +486,58 @@
         2339,
         2718
       ]
+    ],
+    "confidences": [
+      {
+        "intra_conf": 0.997422456741333,
+        "inter_conf": 0.9998435974121094
+      },
+      {
+        "intra_conf": 0.9974281191825867,
+        "inter_conf": 0.9993915557861328
+      },
+      {
+        "intra_conf": 0.9975749850273132,
+        "inter_conf": 0.9997913241386414
+      },
+      {
+        "intra_conf": 0.9984784722328186,
+        "inter_conf": 0.999962329864502
+      }
+    ],
+    "filtered_ranges": [
+      [
+        0,
+        2718
+      ]
+    ],
+    "frame_diff_stats": {
+      "mad_min": 0.8,
+      "mad_max": 1.6,
+      "mad_mean": 1.2,
+      "mad_std": 0.3,
+      "false_positive_count": 3,
+      "total_boundaries": 3
+    },
+    "frame_diff_boundaries": [
+      {
+        "frame": 1859,
+        "mad": 1.08,
+        "hist_corr": 0.9996,
+        "flagged": true
+      },
+      {
+        "frame": 2142,
+        "mad": 1.57,
+        "hist_corr": 0.9953,
+        "flagged": true
+      },
+      {
+        "frame": 2339,
+        "mad": 0.8,
+        "hist_corr": 0.9985,
+        "flagged": true
+      }
     ]
   }
 ]

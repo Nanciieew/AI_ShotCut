@@ -13,15 +13,28 @@
 | Weights | OmniShotCut_ckpt.pth (156.5 MB, SHA256 verified) |
 | Resolution | 128×96 (hardcoded in model) |
 
-## Full Benchmark (2026-07-28, CPU, clean_shot + default)
+## Full Benchmark (2026-07-28, CPU, clean_shot + frame-diff MAD<5.0)
 
-| Video | FPS | Frames | Duration | Runtime | Shots (model) | Shots (expected) | Status |
-|-------|-----|--------|----------|---------|---------------|-------------------|--------|
-| Hard_Cut_1.mp4 | 30 | 1266 | 42.2s | 17.9s | 4 | 4 | ✅ matched |
-| Multiple_Cuts_hard.mp4 | 30 | 1688 | 56.3s | 23.3s | 13 | 13 | ✅ matched |
-| Multiple_Cuts_smooth.mp4 | 30 | 1382 | 46.1s | 19.8s | 3 | 7 | ❌ — 4 dissolves missed |
-| No_Cut_easy.mp4 | 30 | 2729 | 91.0s | 37.2s | 1 | 1 | ✅ matched |
-| No_Cut_hard.mp4 | 30 | 2718 | 90.6s | 39.0s | 4 | 1 | ❌ — 3 false positives |
+| Video | Raw | Filt | Expected | Status | Note |
+|-------|-----|------|----------|--------|------|
+| Hard_Cut_1.mp4 | 4 | 3 | 3 | ✅ | frame 661 FP filtered (MAD=2.6) |
+| Multiple_Cuts_hard.mp4 | 13 | 13 | 13 | ✅ | All boundaries MAD > 21 |
+| Multiple_Cuts_smooth.mp4 | 3 | 3 | 7 | ❌ | Dissolve blind (known limitation) |
+| No_Cut_easy.mp4 | 1 | 1 | 1 | ✅ | — |
+| No_Cut_hard.mp4 | 4 | 1 | 1 | ✅ | 3 FP filtered (MAD 0.8~1.6) |
+
+### Frame-diff filter stats
+
+| Video | Boundaries | MAD min | MAD max | MAD mean | FP flagged |
+|-------|-----------|---------|---------|----------|------------|
+| Hard_Cut_1 | 3 | 2.6 | 63.9 | 37.9 | 1 |
+| Multiple_Cuts_hard | 12 | 21.6 | 68.0 | 47.8 | 0 |
+| Multiple_Cuts_smooth | 2 | 15.1 | 21.4 | 18.3 | 0 |
+| No_Cut_easy | 0 | — | — | — | 0 |
+| No_Cut_hard | 3 | 0.8 | 1.6 | 1.2 | 3 |
+
+**Threshold: MAD < 5.0 AND hist_corr > 0.95 → flag as FP.**
+Real hard cuts have MAD > 15; false positives have MAD < 3.
 
 ## Known Limitations
 

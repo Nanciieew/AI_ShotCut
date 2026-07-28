@@ -3,12 +3,13 @@
   "fps_num": 30,
   "fps_den": 1,
   "fps": 30.0,
-  "frame_count": 1266,
-  "duration_s": 42.2,
+  "frame_count": -1,
+  "duration_s": -1,
   "mode": "clean_shot",
-  "runtime_s": 17.91,
-  "shot_count": 4,
+  "runtime_s": 17.55,
   "error": null,
+  "shot_count_raw": 4,
+  "shot_count_filtered": 3,
   "raw_ranges": [
     [
       0,
@@ -26,5 +27,65 @@
       871,
       1266
     ]
+  ],
+  "confidences": [
+    {
+      "intra_conf": 0.9991614818572998,
+      "inter_conf": 0.9999997615814209
+    },
+    {
+      "intra_conf": 0.9964894652366638,
+      "inter_conf": 0.9990831613540649
+    },
+    {
+      "intra_conf": 0.9987474679946899,
+      "inter_conf": 0.9999998807907104
+    },
+    {
+      "intra_conf": 0.9978212118148804,
+      "inter_conf": 1.0
+    }
+  ],
+  "filtered_ranges": [
+    [
+      0,
+      456
+    ],
+    [
+      456,
+      871
+    ],
+    [
+      871,
+      1266
+    ]
+  ],
+  "frame_diff_stats": {
+    "mad_min": 2.6,
+    "mad_max": 63.9,
+    "mad_mean": 37.9,
+    "mad_std": 25.9,
+    "false_positive_count": 1,
+    "total_boundaries": 3
+  },
+  "frame_diff_boundaries": [
+    {
+      "frame": 456,
+      "mad": 63.93,
+      "hist_corr": 0.6075,
+      "flagged": false
+    },
+    {
+      "frame": 661,
+      "mad": 2.61,
+      "hist_corr": 0.9993,
+      "flagged": true
+    },
+    {
+      "frame": 871,
+      "mad": 47.25,
+      "hist_corr": 0.2654,
+      "flagged": false
+    }
   ]
 }
