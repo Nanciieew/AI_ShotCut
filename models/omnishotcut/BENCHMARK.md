@@ -20,14 +20,17 @@
 | Runtime | 21.7s |
 | Mode | clean_shot |
 
-## Full Benchmark
+## Full Benchmark (2026-07-28, CPU, clean_shot)
 
-Run: `python scripts/experiments/omnishotcut/run_benchmark.py`
+| Video | FPS | Frames | Duration | Runtime | Shots | Notes |
+|-------|-----|--------|----------|---------|-------|-------|
+| Hard_Cut_1.mp4 | 30 | 1266 | 42.2s | 17.9s | 4 | ✅ |
+| Multiple_Cuts_hard.mp4 | 30 | 1688 | 56.3s | 23.3s | 13 | ✅ Shortest shot: 6f |
+| Multiple_Cuts_smooth.mp4 | 30 | 1382 | 46.1s | 19.8s | 3 | ⚠️ Dissolves filtered, only 3 hard cuts |
+| No_Cut_easy.mp4 | 30 | 2729 | 91.0s | 37.2s | 1 | ✅ Correct |
+| No_Cut_hard.mp4 | 30 | 2718 | 90.6s | 39.0s | 4 | ❌ FP — should be 1 |
 
-Outputs saved to: `tests/fixtures/raw_outputs/omnishotcut/`
-
-## Template
-
-```text
-| video_name.mp4 | fps | frames | dur (s) | runtime (s) | shots | mode |
-```
+**Key findings**:
+- `clean_shot` mode filters dissolve/wipe transitions → `Multiple_Cuts_smooth` only found 3/expected
+- Motion/changes in `No_Cut_hard` caused 4 false positives
+- CPU inference ~0.4s/frame on 30fps video (~42% real-time)

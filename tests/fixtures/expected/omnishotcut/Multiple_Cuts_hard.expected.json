@@ -1,0 +1,28 @@
+{
+  "video": "Multiple_Cuts_hard.mp4",
+  "fps_num": 30,
+  "fps_den": 1,
+  "annotated_by": "model-reference-pending-human-review",
+  "annotation_date": "2026-07-28",
+  "tolerance_frames": 3,
+  "model_raw_output_summary": {
+    "shot_count": 13,
+    "runtime_s": 23.3,
+    "ranges": [[0,210],[210,216],[216,276],[276,347],[347,411],[411,492],[492,636],[636,850],[850,923],[923,1147],[1147,1211],[1211,1504],[1504,1688]]
+  },
+  "shots": [
+    {"index": 0,  "start_frame_expected": 0,    "end_frame_expected": 210,  "boundary_type": "hard_cut", "description": "Shot 1"},
+    {"index": 1,  "start_frame_expected": 210,  "end_frame_expected": 216,  "boundary_type": "hard_cut", "description": "Shot 2 (very short: 6 frames)"},
+    {"index": 2,  "start_frame_expected": 216,  "end_frame_expected": 276,  "boundary_type": "hard_cut", "description": "Shot 3"},
+    {"index": 3,  "start_frame_expected": 276,  "end_frame_expected": 347,  "boundary_type": "hard_cut", "description": "Shot 4"},
+    {"index": 4,  "start_frame_expected": 347,  "end_frame_expected": 411,  "boundary_type": "hard_cut", "description": "Shot 5"},
+    {"index": 5,  "start_frame_expected": 411,  "end_frame_expected": 492,  "boundary_type": "hard_cut", "description": "Shot 6"},
+    {"index": 6,  "start_frame_expected": 492,  "end_frame_expected": 636,  "boundary_type": "hard_cut", "description": "Shot 7"},
+    {"index": 7,  "start_frame_expected": 636,  "end_frame_expected": 850,  "boundary_type": "hard_cut", "description": "Shot 8"},
+    {"index": 8,  "start_frame_expected": 850,  "end_frame_expected": 923,  "boundary_type": "hard_cut", "description": "Shot 9"},
+    {"index": 9,  "start_frame_expected": 923,  "end_frame_expected": 1147, "boundary_type": "hard_cut", "description": "Shot 10"},
+    {"index": 10, "start_frame_expected": 1147, "end_frame_expected": 1211, "boundary_type": "hard_cut", "description": "Shot 11"},
+    {"index": 11, "start_frame_expected": 1211, "end_frame_expected": 1504, "boundary_type": "hard_cut", "description": "Shot 12"},
+    {"index": 12, "start_frame_expected": 1504, "end_frame_expected": 1688, "boundary_type": "hard_cut", "description": "Shot 13 → end"}
+  ]
+}

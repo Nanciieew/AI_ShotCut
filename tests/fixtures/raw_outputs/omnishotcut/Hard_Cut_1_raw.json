@@ -1,0 +1,30 @@
+{
+  "video": "Hard_Cut_1.mp4",
+  "fps_num": 30,
+  "fps_den": 1,
+  "fps": 30.0,
+  "frame_count": 1266,
+  "duration_s": 42.2,
+  "mode": "clean_shot",
+  "runtime_s": 17.91,
+  "shot_count": 4,
+  "error": null,
+  "raw_ranges": [
+    [
+      0,
+      456
+    ],
+    [
+      456,
+      661
+    ],
+    [
+      661,
+      871
+    ],
+    [
+      871,
+      1266
+    ]
+  ]
+}

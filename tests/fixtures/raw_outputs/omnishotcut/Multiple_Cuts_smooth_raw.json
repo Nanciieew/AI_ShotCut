@@ -1,0 +1,26 @@
+{
+  "video": "Multiple_Cuts_smooth.mp4",
+  "fps_num": 30,
+  "fps_den": 1,
+  "fps": 30.0,
+  "frame_count": 1382,
+  "duration_s": 46.1,
+  "mode": "clean_shot",
+  "runtime_s": 19.77,
+  "shot_count": 3,
+  "error": null,
+  "raw_ranges": [
+    [
+      0,
+      312
+    ],
+    [
+      312,
+      359
+    ],
+    [
+      359,
+      1382
+    ]
+  ]
+}

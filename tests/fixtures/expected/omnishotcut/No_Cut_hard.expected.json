@@ -1,0 +1,17 @@
+{
+  "video": "No_Cut_hard.mp4",
+  "fps_num": 30,
+  "fps_den": 1,
+  "annotated_by": "model-reference-pending-human-review",
+  "annotation_date": "2026-07-28",
+  "tolerance_frames": 3,
+  "model_raw_output_summary": {
+    "shot_count": 4,
+    "runtime_s": 39.0,
+    "ranges": [[0,1859],[1859,2142],[2142,2339],[2339,2718]]
+  },
+  "notes": "⚠️ DISPUTE: Model found 4 shots but this video is expected to have NO cuts. Model detected false positives at frames 1859, 2142, 2339. Human review required — if confirmed no cuts, expected shot_count should be 1.",
+  "shots": [
+    {"index": 0, "start_frame_expected": 0, "end_frame_expected": 2718, "boundary_type": "none", "description": "EXPECTED: single continuous shot. Model falsely detected 4 cuts (FP)."}
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "video": "No_Cut_easy.mp4",
+  "fps_num": 30,
+  "fps_den": 1,
+  "fps": 30.0,
+  "frame_count": 2729,
+  "duration_s": 91.0,
+  "mode": "clean_shot",
+  "runtime_s": 37.22,
+  "shot_count": 1,
+  "error": null,
+  "raw_ranges": [
+    [
+      0,
+      2729
+    ]
+  ]
+}

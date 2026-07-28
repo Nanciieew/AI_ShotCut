@@ -4,7 +4,7 @@
 Usage: python scripts/experiments/omnishotcut/run_benchmark.py
 """
 
-import json, os, sys, time
+import json, os, re, sys, time
 from pathlib import Path
 from subprocess import run as sub_run
 
@@ -23,14 +23,52 @@ if not os.path.exists(_FFPROBE):
 os.environ["PATH"] = str(_FF_DIR) + os.pathsep + os.environ.get("PATH", "")
 
 
+def _ffprobe(args: list[str]) -> str:
+    """Run ffprobe and return stdout, using full path."""
+    r = sub_run([_FFPROBE] + args, capture_output=True, text=True,
+                env={**os.environ, "PATH": str(_FF_DIR) + os.pathsep + os.environ.get("PATH","")})
+    if r.returncode != 0:
+        raise RuntimeError(f"ffprobe failed: {r.stderr}")
+    return r.stdout
+
 def get_fps(video_path: str) -> tuple[int, int]:
-    r = sub_run([_FFPROBE,"-v","quiet","-select_streams","v:0","-show_entries","stream=r_frame_rate","-of","json",video_path], capture_output=True, text=True)
-    num, den = map(int, json.loads(r.stdout)["streams"][0]["r_frame_rate"].split("/"))
-    return num, den
+    """Get FPS via ffprobe, with fallback to ffmpeg."""
+    try:
+        out = _ffprobe(["-v","quiet","-select_streams","v:0","-show_entries","stream=r_frame_rate","-of","json",video_path])
+        num, den = map(int, json.loads(out)["streams"][0]["r_frame_rate"].split("/"))
+        return num, den
+    except Exception:
+        pass
+    # Fallback: use ffmpeg
+    r = sub_run([str(_FFMPEG), "-i", video_path], capture_output=True, text=True,
+                env={**os.environ, "PATH": str(_FF_DIR) + os.pathsep + os.environ.get("PATH","")})
+    for line in r.stderr.split("\n"):
+        if "fps" in line.lower() or "Stream #0:0" in line:
+            import re
+            m = re.search(r'(\d+)\s*fps', line)
+            if m:
+                return int(m.group(1)), 1
+    return 24000, 1001
 
 def get_frame_count(video_path: str) -> int:
-    r = sub_run([_FFPROBE,"-v","quiet","-select_streams","v:0","-count_frames","-show_entries","stream=nb_read_frames","-of","json",video_path], capture_output=True, text=True)
-    return int(json.loads(r.stdout)["streams"][0]["nb_read_frames"])
+    """Estimate frame count from duration * fps via ffmpeg."""
+    try:
+        out = _ffprobe(["-v","quiet","-select_streams","v:0","-count_frames","-show_entries","stream=nb_read_frames","-of","json",video_path])
+        return int(json.loads(out)["streams"][0]["nb_read_frames"])
+    except Exception:
+        pass
+    # Fallback: ffmpeg duration
+    r = sub_run([str(_FFMPEG), "-i", video_path], capture_output=True, text=True,
+                env={**os.environ, "PATH": str(_FF_DIR) + os.pathsep + os.environ.get("PATH","")})
+    import re
+    for line in r.stderr.split("\n"):
+        m = re.search(r'Duration:\s*(\d+):(\d+):(\d+\.\d+)', line)
+        if m:
+            h, m_, s = int(m.group(1)), int(m.group(2)), float(m.group(3))
+            dur_sec = h*3600 + m_*60 + s
+            num, den = get_fps(video_path)
+            return int(dur_sec * num / den)
+    return -1
 
 
 def main() -> int:

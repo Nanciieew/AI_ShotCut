@@ -1,0 +1,172 @@
+[
+  {
+    "video": "Hard_Cut_1.mp4",
+    "fps_num": 30,
+    "fps_den": 1,
+    "fps": 30.0,
+    "frame_count": 1266,
+    "duration_s": 42.2,
+    "mode": "clean_shot",
+    "runtime_s": 17.91,
+    "shot_count": 4,
+    "error": null,
+    "raw_ranges": [
+      [
+        0,
+        456
+      ],
+      [
+        456,
+        661
+      ],
+      [
+        661,
+        871
+      ],
+      [
+        871,
+        1266
+      ]
+    ]
+  },
+  {
+    "video": "Multiple_Cuts_hard.mp4",
+    "fps_num": 30,
+    "fps_den": 1,
+    "fps": 30.0,
+    "frame_count": 1688,
+    "duration_s": 56.3,
+    "mode": "clean_shot",
+    "runtime_s": 23.26,
+    "shot_count": 13,
+    "error": null,
+    "raw_ranges": [
+      [
+        0,
+        210
+      ],
+      [
+        210,
+        216
+      ],
+      [
+        216,
+        276
+      ],
+      [
+        276,
+        347
+      ],
+      [
+        347,
+        411
+      ],
+      [
+        411,
+        492
+      ],
+      [
+        492,
+        636
+      ],
+      [
+        636,
+        850
+      ],
+      [
+        850,
+        923
+      ],
+      [
+        923,
+        1147
+      ],
+      [
+        1147,
+        1211
+      ],
+      [
+        1211,
+        1504
+      ],
+      [
+        1504,
+        1688
+      ]
+    ]
+  },
+  {
+    "video": "Multiple_Cuts_smooth.mp4",
+    "fps_num": 30,
+    "fps_den": 1,
+    "fps": 30.0,
+    "frame_count": 1382,
+    "duration_s": 46.1,
+    "mode": "clean_shot",
+    "runtime_s": 19.77,
+    "shot_count": 3,
+    "error": null,
+    "raw_ranges": [
+      [
+        0,
+        312
+      ],
+      [
+        312,
+        359
+      ],
+      [
+        359,
+        1382
+      ]
+    ]
+  },
+  {
+    "video": "No_Cut_easy.mp4",
+    "fps_num": 30,
+    "fps_den": 1,
+    "fps": 30.0,
+    "frame_count": 2729,
+    "duration_s": 91.0,
+    "mode": "clean_shot",
+    "runtime_s": 37.22,
+    "shot_count": 1,
+    "error": null,
+    "raw_ranges": [
+      [
+        0,
+        2729
+      ]
+    ]
+  },
+  {
+    "video": "No_Cut_hard.mp4",
+    "fps_num": 30,
+    "fps_den": 1,
+    "fps": 30.0,
+    "frame_count": 2718,
+    "duration_s": 90.6,
+    "mode": "clean_shot",
+    "runtime_s": 39.01,
+    "shot_count": 4,
+    "error": null,
+    "raw_ranges": [
+      [
+        0,
+        1859
+      ],
+      [
+        1859,
+        2142
+      ],
+      [
+        2142,
+        2339
+      ],
+      [
+        2339,
+        2718
+      ]
+    ]
+  }
+]

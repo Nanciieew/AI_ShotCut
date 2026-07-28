@@ -1,0 +1,19 @@
+{
+  "video": "Hard_Cut_1.mp4",
+  "fps_num": 30,
+  "fps_den": 1,
+  "annotated_by": "model-reference-pending-human-review",
+  "annotation_date": "2026-07-28",
+  "tolerance_frames": 3,
+  "model_raw_output_summary": {
+    "shot_count": 4,
+    "runtime_s": 17.9,
+    "ranges": [[0,456],[456,661],[661,871],[871,1266]]
+  },
+  "shots": [
+    {"index": 0, "start_frame_expected": 0,   "end_frame_expected": 456,  "boundary_type": "hard_cut", "start_ms": 0,     "end_ms": 15200, "description": "Shot 1 → cut at frame ~456"},
+    {"index": 1, "start_frame_expected": 456, "end_frame_expected": 661,  "boundary_type": "hard_cut", "start_ms": 15200, "end_ms": 22033, "description": "Shot 2 → cut at frame ~661"},
+    {"index": 2, "start_frame_expected": 661, "end_frame_expected": 871,  "boundary_type": "hard_cut", "start_ms": 22033, "end_ms": 29033, "description": "Shot 3 → cut at frame ~871"},
+    {"index": 3, "start_frame_expected": 871, "end_frame_expected": 1266, "boundary_type": "hard_cut", "start_ms": 29033, "end_ms": 42200, "description": "Shot 4 → end"}
+  ]
+}
