@@ -1,0 +1,32 @@
+# OmniShotCut Model Configuration
+# SPIKE status: model installed, Adapter pending.
+
+omnishotcut:
+  version: "0.1.0"
+  description: "Shot Boundary Detection — hard cuts, dissolves, wipes"
+
+  # --- Third-party source ---
+  repository: "https://github.com/UVA-Computer-Vision-Lab/OmniShotCut"
+  revision: "23ad6fb41b296fb9258b0e7825125a914573b906"
+  code_license: "MIT"
+  integration_method: "pip install git+...@fixed-commit"
+
+  # --- Weights ---
+  weight_source: "huggingface"
+  weight_repo: "uva-cv-lab/OmniShotCut"
+  weight_filename: "OmniShotCut_ckpt.pth"
+  weight_sha256: "5948ea78e00626c0e6c5e742e64873ef872cf4a5071d2a0841aed51c3e686cfa"
+  weight_license: "MIT"
+
+  # --- Runtime ---
+  device: "cpu"           # "cuda:0" if GPU available
+  mode: "clean_shot"      # "clean_shot" (general cuts only) | "default" (full labels)
+  overlap: 20             # overlap frames between inference windows
+
+  # --- Output characteristics ---
+  output_unit: "frame"            # raw output uses frames
+  end_frame_convention: "inclusive"   # raw [start, end] is inclusive
+  confidence_available: false     # no confidence in clean_shot mode
+
+  # --- Enabled ---
+  enabled: false  # set to true when Adapter + tests pass
