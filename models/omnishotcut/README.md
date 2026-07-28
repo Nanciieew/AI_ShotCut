@@ -147,14 +147,24 @@ Shot 之间无间隙，前一个 shot 的 `end_ms` 等于后一个 shot 的 `sta
 | 项目 | 值 |
 |------|-----|
 | **repository** | `https://github.com/UVA-Computer-Vision-Lab/OmniShotCut` |
-| **fixed commit** | `TBD — 接入时固定` |
-| **integration method** | 按 `third_party/README.md` 方案 1：固定 Commit pip install |
-| **code license** | `unknown — 接入前必须核验` |
+| **fixed commit** | `23ad6fb41b296fb9258b0e7825125a914573b906` |
+| **integration method** | 方案 1：固定 Commit pip install |
+| **code license** | `MIT` — 已核验 |
+| **package version** | 0.1.0 |
 
-### 安装命令（固定 Commit 后）
+### 安装命令
 
 ```bash
-pip install git+https://github.com/UVA-Computer-Vision-Lab/OmniShotCut.git@<COMMIT_HASH>
+pip install git+https://github.com/UVA-Computer-Vision-Lab/OmniShotCut.git@23ad6fb41b296fb9258b0e7825125a914573b906
+```
+
+### CPU 兼容性补丁
+
+OmniShotCut `engine.py` 硬编码 `model.to("cuda")`（3 处），CPU 环境需要 patch：
+
+```python
+# engine.py line 61, ~142, ~171: replace "cuda" → conditional
+device = "cuda" if torch.cuda.is_available() else "cpu"
 ```
 
 ---
@@ -163,26 +173,43 @@ pip install git+https://github.com/UVA-Computer-Vision-Lab/OmniShotCut.git@<COMM
 
 | 项目 | 值 |
 |------|-----|
-| **source** | `TBD — 待确定权重下载地址` |
-| **checksum (SHA256)** | `TBD — 下载后生成` |
-| **license** | `unknown — 接入前必须核验` |
-| **local path** | `model_store/omnishotcut/1.0.0/model.pth` |
+| **source** | HuggingFace Hub: `uva-cv-lab/OmniShotCut` |
+| **filename** | `OmniShotCut_ckpt.pth` |
+| **checksum (SHA256)** | `5948ea78e00626c0e6c5e742e64873ef872cf4a5071d2a0841aed51c3e686cfa` |
+| **size** | 156.5 MB |
+| **license** | `MIT` — 已核验（LICENSE 文件明确包含 code + weights） |
+| **local path** | `model_store/omnishotcut/1.0.0/OmniShotCut_ckpt.pth` |
 
 权重文件禁止提交到 Git（见 `.gitignore`）。
 
-> **⚠️ 当前 `weights_license: unknown`，`commercial_use: unknown`。**
-> 不得自动标记为可商用，核验前保持 unknown。
+> **License 已核验：MIT**。LICENSE 文件明确声明 "this Software" 包含 "model weights"。
+> `commercial_use: true`，`attribution_required: true`。
 
 ---
 
 ## 当前状态
 
-**NOT_INSTALLED**
+**SPIKE**
 
 ```text
 NOT_INSTALLED → SPIKE → TESTING → READY
-     ↑ 当前
+                     ↑ 当前
 ```
+
+### SPIKE 检查清单（已完成）
+
+| # | 问题 | 答案 |
+|---|------|------|
+| 1 | 能否安装？ | ✅ `pip install git+...@23ad6fb` |
+| 2 | 权重能否下载？ | ✅ HuggingFace Hub `uva-cv-lab/OmniShotCut`，156.5 MB |
+| 3 | CPU/GPU 能否运行？ | ✅ CPU (22s/demo)，GPU 需 patch 硬编码 `.to("cuda")` |
+| 4 | 原始输入是什么？ | MP4 文件路径 → FFmpeg 解码 → resize → numpy/tensor |
+| 5 | 原始输出是什么？ | `[[start_frame, end_frame], ...]` (clean_shot 模式) |
+| 6 | End Frame 是否包含？ | **INCLUSIVE** `[start, end]` — 需 +1 转换为 `end_frame_exclusive` |
+| 7 | 输出有没有置信度？ | **NO** — clean_shot 模式只返回范围，无 confidence |
+| 8 | 10 秒视频运行多久？ | ~22s CPU (demo_video1, 26 shots) |
+| 9 | 显存占用多少？ | N/A（CPU 运行，无 GPU） |
+| 10 | FFmpeg 额外要求？ | ✅ 必需！通过 `ffmpeg-python` 解码视频 |
 
 ### 环境检查
 

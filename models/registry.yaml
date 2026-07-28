@@ -10,23 +10,23 @@
 models:
   omnishotcut:
     task: shot_boundary_detection
-    description: Detects shot boundaries (hard cuts, dissolves) in video.
+    description: Detects shot boundaries (hard cuts, dissolves, wipes) in video.
     repository: https://github.com/UVA-Computer-Vision-Lab/OmniShotCut
-    revision: ""
-    code_license: unknown
-    weights_license: unknown
+    revision: 23ad6fb41b296fb9258b0e7825125a914573b906
+    code_license: MIT
+    weights_license: MIT
     dataset_license: unknown
-    commercial_use: unknown
-    attribution_required: unknown
-    redistribution_allowed: unknown
+    commercial_use: true
+    attribution_required: true
+    redistribution_allowed: true
     adapter: models.omnishotcut.adapter.OmniShotCutAdapter
     enabled: false
-    requires_gpu: true
+    requires_gpu: false
     notes: |
-      UVA Computer Vision Lab.
-      Repository URL added but commit NOT yet fixed.
-      License NOT yet verified — DO NOT mark as commercial_use=true.
-      After install: fill revision, code_license, weights_license.
+      UVA Computer Vision Lab. MIT License for both code AND weights.
+      Weights: HuggingFace Hub (uva-cv-lab/OmniShotCut).
+      Verified: installs cleanly, loads on CPU with minor patch.
+      GPU optional — CPU inference works at ~22s for short clip.
 
   whisper:
     task: speech_to_text
