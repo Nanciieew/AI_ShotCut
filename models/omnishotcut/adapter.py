@@ -63,7 +63,7 @@ class OmniShotCutAdapter(BaseModelAdapter):
             return
 
         try:
-            import omnishotcut  # noqa: F401
+            import omnishotcut  # third-party package
         except ImportError:
             raise OmniShotCutImportError()
 
