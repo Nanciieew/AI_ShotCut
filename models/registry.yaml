@@ -11,7 +11,7 @@ models:
   omnishotcut:
     task: shot_boundary_detection
     description: Detects shot boundaries (hard cuts, dissolves) in video.
-    repository: ""
+    repository: https://github.com/UVA-Computer-Vision-Lab/OmniShotCut
     revision: ""
     code_license: unknown
     weights_license: unknown
@@ -23,8 +23,10 @@ models:
     enabled: false
     requires_gpu: true
     notes: |
-      Integration method TBD after repository review.
-      See third_party/README.md for approved strategies.
+      UVA Computer Vision Lab.
+      Repository URL added but commit NOT yet fixed.
+      License NOT yet verified — DO NOT mark as commercial_use=true.
+      After install: fill revision, code_license, weights_license.
 
   whisper:
     task: speech_to_text

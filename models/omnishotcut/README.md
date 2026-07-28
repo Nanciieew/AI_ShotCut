@@ -146,10 +146,16 @@ Shot 之间无间隙，前一个 shot 的 `end_ms` 等于后一个 shot 的 `sta
 
 | 项目 | 值 |
 |------|-----|
-| **repository** | `TBD — 待确定仓库地址` |
+| **repository** | `https://github.com/UVA-Computer-Vision-Lab/OmniShotCut` |
 | **fixed commit** | `TBD — 接入时固定` |
-| **integration method** | 按 `third_party/README.md` 方案选择（推荐方案 1：固定 Commit pip install） |
+| **integration method** | 按 `third_party/README.md` 方案 1：固定 Commit pip install |
 | **code license** | `unknown — 接入前必须核验` |
+
+### 安装命令（固定 Commit 后）
+
+```bash
+pip install git+https://github.com/UVA-Computer-Vision-Lab/OmniShotCut.git@<COMMIT_HASH>
+```
 
 ---
 
@@ -164,6 +170,9 @@ Shot 之间无间隙，前一个 shot 的 `end_ms` 等于后一个 shot 的 `sta
 
 权重文件禁止提交到 Git（见 `.gitignore`）。
 
+> **⚠️ 当前 `weights_license: unknown`，`commercial_use: unknown`。**
+> 不得自动标记为可商用，核验前保持 unknown。
+
 ---
 
 ## 当前状态
@@ -173,6 +182,27 @@ Shot 之间无间隙，前一个 shot 的 `end_ms` 等于后一个 shot 的 `sta
 ```text
 NOT_INSTALLED → SPIKE → TESTING → READY
      ↑ 当前
+```
+
+### 环境检查
+
+```bash
+python scripts/check_omnishotcut_environment.py
+```
+
+### 原始推理
+
+```bash
+python models/omnishotcut/run_raw_inference.py \
+    --input models/omnishotcut/tests/fixtures/videos/hard_cut.mp4 \
+    --output models/omnishotcut/sample_output.json
+```
+
+### 输出检查
+
+```bash
+python models/omnishotcut/inspect_output.py \
+    --input models/omnishotcut/sample_output.json
 ```
 
 | 阶段 | 含义 |
