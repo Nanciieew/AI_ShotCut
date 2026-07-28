@@ -2,18 +2,19 @@
   "video": "Multiple_Cuts_smooth.mp4",
   "fps_num": 30,
   "fps_den": 1,
-  "annotated_by": "model-reference-pending-human-review",
+  "annotated_by": "human-reviewed",
   "annotation_date": "2026-07-28",
   "tolerance_frames": 5,
-  "model_raw_output_summary": {
-    "shot_count": 3,
-    "runtime_s": 19.8,
-    "ranges": [[0,312],[312,359],[359,1382]]
-  },
-  "notes": "Clean_shot mode detected only 3 hard boundaries. Smooth transitions (dissolves/wipes) may have been filtered out. Consider running default mode for comparison.",
+  "status": "deviated",
+  "model_issue": "dissolve_blind",
+  "notes": "Model only detected 3/7 shots (2/6 boundaries). Dissolve/wipe transitions at 128x96 resolution are invisible to the model — all output labels are 'General' with conf > 0.99. Known limitation. Expected: 6 boundary points → 7 shots.",
   "shots": [
-    {"index": 0, "start_frame_expected": 0,   "end_frame_expected": 312,  "boundary_type": "hard_cut", "description": "Shot 1 → transition at ~312"},
-    {"index": 1, "start_frame_expected": 312, "end_frame_expected": 359,  "boundary_type": "hard_cut", "description": "Shot 2 (short: 47 frames)"},
-    {"index": 2, "start_frame_expected": 359, "end_frame_expected": 1382, "boundary_type": "hard_cut", "description": "Shot 3 → end (long take)"}
+    {"index": 0, "start_frame_expected": 0,   "end_frame_expected": 270,  "boundary_type": "dissolve", "description": "Shot 1 → dissolve at ~9s"},
+    {"index": 1, "start_frame_expected": 270, "end_frame_expected": 420,  "boundary_type": "dissolve", "description": "Shot 2 → dissolve at ~14s"},
+    {"index": 2, "start_frame_expected": 420, "end_frame_expected": 720,  "boundary_type": "dissolve", "description": "Shot 3 → dissolve at ~24s"},
+    {"index": 3, "start_frame_expected": 720, "end_frame_expected": 810,  "boundary_type": "dissolve", "description": "Shot 4 → dissolve at ~27s"},
+    {"index": 4, "start_frame_expected": 810, "end_frame_expected": 900,  "boundary_type": "dissolve", "description": "Shot 5 → dissolve at ~30s"},
+    {"index": 5, "start_frame_expected": 900, "end_frame_expected": 1140, "boundary_type": "dissolve", "description": "Shot 6 → dissolve at ~38s"},
+    {"index": 6, "start_frame_expected": 1140,"end_frame_expected": 1382, "boundary_type": "dissolve", "description": "Shot 7 → end"}
   ]
 }

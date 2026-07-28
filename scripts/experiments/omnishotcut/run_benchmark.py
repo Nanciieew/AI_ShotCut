@@ -104,9 +104,9 @@ def main() -> int:
 
         t0 = time.monotonic()
         err = None
-        raw = None
+        raw, confs = None, None
         try:
-            raw = model.inference(str(vp), mode="clean_shot")
+            raw, confs = model.inference(str(vp), mode="clean_shot")
         except Exception as e:
             err = str(e)
         rt = time.monotonic() - t0
@@ -120,6 +120,7 @@ def main() -> int:
             "shot_count": len(raw) if raw else 0,
             "error": err,
             "raw_ranges": raw,
+            "confidences": confs,
         }
         out_path = OUT_DIR / f"{vname.rsplit('.',1)[0]}_raw.json"
         out_path.write_text(json.dumps(entry, indent=2, ensure_ascii=False), encoding="utf-8")

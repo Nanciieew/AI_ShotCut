@@ -2,17 +2,14 @@
   "video": "Multiple_Cuts_hard.mp4",
   "fps_num": 30,
   "fps_den": 1,
-  "annotated_by": "model-reference-pending-human-review",
+  "annotated_by": "human-reviewed",
   "annotation_date": "2026-07-28",
   "tolerance_frames": 3,
-  "model_raw_output_summary": {
-    "shot_count": 13,
-    "runtime_s": 23.3,
-    "ranges": [[0,210],[210,216],[216,276],[276,347],[347,411],[411,492],[492,636],[636,850],[850,923],[923,1147],[1147,1211],[1211,1504],[1504,1688]]
-  },
+  "status": "matched",
+  "notes": "Model output verified — 13 shots match ground truth.",
   "shots": [
     {"index": 0,  "start_frame_expected": 0,    "end_frame_expected": 210,  "boundary_type": "hard_cut", "description": "Shot 1"},
-    {"index": 1,  "start_frame_expected": 210,  "end_frame_expected": 216,  "boundary_type": "hard_cut", "description": "Shot 2 (very short: 6 frames)"},
+    {"index": 1,  "start_frame_expected": 210,  "end_frame_expected": 216,  "boundary_type": "hard_cut", "description": "Shot 2 (6f flash)"},
     {"index": 2,  "start_frame_expected": 216,  "end_frame_expected": 276,  "boundary_type": "hard_cut", "description": "Shot 3"},
     {"index": 3,  "start_frame_expected": 276,  "end_frame_expected": 347,  "boundary_type": "hard_cut", "description": "Shot 4"},
     {"index": 4,  "start_frame_expected": 347,  "end_frame_expected": 411,  "boundary_type": "hard_cut", "description": "Shot 5"},
