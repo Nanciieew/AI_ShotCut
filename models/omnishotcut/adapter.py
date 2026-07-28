@@ -47,6 +47,7 @@ class OmniShotCutAdapter(BaseModelAdapter):
     def __init__(self) -> None:
         self._model: Any = None
         self._loaded = False
+        self._last_shots: list[dict] = []   # last predict() shots for artifact save
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -188,15 +189,25 @@ class OmniShotCutAdapter(BaseModelAdapter):
                     retryable=False,
                 )
 
+            # Store shots for downstream artifact save
+            self._last_shots = shots_list
+
+            # Build artifact URI per IO_Rule §6
+            artifact_uri = (
+                f"storage://projects/{video_id[:8]}/videos/{video_id}/"
+                f"artifacts/omnishotcut/{self.version}/shots.json"
+            )
+
             return self._success(
                 task_id=task_id,
                 video_id=video_id,
                 schema_version=schema_version,
                 artifact_key="shots",
-                artifact_uri="",  # filled by Celery Task
+                artifact_uri=artifact_uri,
+                shots=shots_list,
                 metrics={
-                    "shot_count_raw": len(raw_ranges),
-                    "shot_count_filtered": len(filtered_ranges),
+                    "shot_count": len(filtered_ranges),        # IO_Rule §2 required
+                    "shot_count_raw": len(raw_ranges),          # pre-filter count
                     "false_positives_removed": len(raw_ranges) - len(filtered_ranges),
                     "runtime_ms": runtime_ms,
                     "frame_diff": fd_stats,
@@ -311,6 +322,7 @@ class OmniShotCutAdapter(BaseModelAdapter):
     def _success(
         task_id: str, video_id: str, schema_version: str,
         artifact_key: str, artifact_uri: str, metrics: dict,
+        shots: list[dict] | None = None,
         warnings: list[str] | None = None,
     ) -> dict[str, Any]:
         return {

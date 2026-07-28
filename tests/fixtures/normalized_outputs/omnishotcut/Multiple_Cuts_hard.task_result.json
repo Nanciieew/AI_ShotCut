@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "task_id": "test_Multiple_Cuts_hard",
+  "video_id": "test_Multiple_Cuts_hard",
+  "status": "SUCCEEDED",
+  "model": {
+    "name": "omnishotcut",
+    "version": "0.1.0"
+  },
+  "artifacts": {
+    "shots": "storage://projects/test_Mul/videos/test_Multiple_Cuts_hard/artifacts/omnishotcut/0.1.0/shots.json"
+  },
+  "metrics": {
+    "shot_count": 13,
+    "shot_count_raw": 13,
+    "false_positives_removed": 0,
+    "runtime_ms": 22740,
+    "frame_diff": {
+      "boundaries_checked": 12,
+      "false_positives_removed": 0,
+      "mad_min": 21.6,
+      "mad_max": 68.0,
+      "mad_mean": 47.8
+    }
+  },
+  "warnings": [
+    "Shot[1] (start=8759ms) does not follow previous end (8800ms) — gap or overlap",
+    "Shot[2] (start=9009ms) does not follow previous end (9051ms) — gap or overlap",
+    "Shot[3] (start=11512ms) does not follow previous end (11553ms) — gap or overlap",
+    "Shot[4] (start=14473ms) does not follow previous end (14514ms) — gap or overlap",
+    "Shot[5] (start=17142ms) does not follow previous end (17184ms) — gap or overlap",
+    "Shot[6] (start=20520ms) does not follow previous end (20562ms) — gap or overlap",
+    "Shot[7] (start=26526ms) does not follow previous end (26568ms) — gap or overlap",
+    "Shot[8] (start=35452ms) does not follow previous end (35494ms) — gap or overlap",
+    "Shot[9] (start=38497ms) does not follow previous end (38538ms) — gap or overlap",
+    "Shot[10] (start=47839ms) does not follow previous end (47881ms) — gap or overlap",
+    "Shot[11] (start=50509ms) does not follow previous end (50550ms) — gap or overlap",
+    "Shot[12] (start=62729ms) does not follow previous end (62771ms) — gap or overlap"
+  ],
+  "error": null
+}

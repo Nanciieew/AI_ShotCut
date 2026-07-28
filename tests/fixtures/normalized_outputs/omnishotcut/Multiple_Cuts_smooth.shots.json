@@ -1,31 +1,42 @@
 {
-  "schema_version": "1.0",
-  "task_id": "test_Multiple_Cuts_smooth",
   "video_id": "test_Multiple_Cuts_smooth",
-  "status": "SUCCEEDED",
   "model": {
     "name": "omnishotcut",
     "version": "0.1.0"
   },
-  "artifacts": {
-    "shots": ""
-  },
-  "metrics": {
-    "shot_count_raw": 3,
-    "shot_count_filtered": 3,
-    "false_positives_removed": 0,
-    "runtime_ms": 19234,
-    "frame_diff": {
-      "boundaries_checked": 2,
-      "false_positives_removed": 0,
-      "mad_min": 15.1,
-      "mad_max": 21.4,
-      "mad_mean": 18.3
+  "shots": [
+    {
+      "shot_id": "shot_000001",
+      "video_id": "test_Multiple_Cuts_smooth",
+      "index": 0,
+      "start_ms": 0,
+      "end_ms": 13055,
+      "start_frame": 0,
+      "end_frame_exclusive": 313,
+      "boundary_type": null,
+      "confidence": 0.9948
+    },
+    {
+      "shot_id": "shot_000002",
+      "video_id": "test_Multiple_Cuts_smooth",
+      "index": 1,
+      "start_ms": 13013,
+      "end_ms": 15015,
+      "start_frame": 312,
+      "end_frame_exclusive": 360,
+      "boundary_type": null,
+      "confidence": 0.9975
+    },
+    {
+      "shot_id": "shot_000003",
+      "video_id": "test_Multiple_Cuts_smooth",
+      "index": 2,
+      "start_ms": 14973,
+      "end_ms": 57683,
+      "start_frame": 359,
+      "end_frame_exclusive": 1383,
+      "boundary_type": null,
+      "confidence": 0.9989
     }
-  },
-  "warnings": [
-    "Shot[1] (start=13013ms) does not follow previous end (13055ms) — gap or overlap",
-    "Shot[2] (start=14973ms) does not follow previous end (15015ms) — gap or overlap"
-  ],
-  "error": null
+  ]
 }

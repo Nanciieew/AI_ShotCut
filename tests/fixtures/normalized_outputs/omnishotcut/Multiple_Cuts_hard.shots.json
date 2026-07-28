@@ -1,41 +1,152 @@
 {
-  "schema_version": "1.0",
-  "task_id": "test_Multiple_Cuts_hard",
   "video_id": "test_Multiple_Cuts_hard",
-  "status": "SUCCEEDED",
   "model": {
     "name": "omnishotcut",
     "version": "0.1.0"
   },
-  "artifacts": {
-    "shots": ""
-  },
-  "metrics": {
-    "shot_count_raw": 13,
-    "shot_count_filtered": 13,
-    "false_positives_removed": 0,
-    "runtime_ms": 22320,
-    "frame_diff": {
-      "boundaries_checked": 12,
-      "false_positives_removed": 0,
-      "mad_min": 21.6,
-      "mad_max": 68.0,
-      "mad_mean": 47.8
+  "shots": [
+    {
+      "shot_id": "shot_000001",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 0,
+      "start_ms": 0,
+      "end_ms": 8800,
+      "start_frame": 0,
+      "end_frame_exclusive": 211,
+      "boundary_type": null,
+      "confidence": 0.999
+    },
+    {
+      "shot_id": "shot_000002",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 1,
+      "start_ms": 8759,
+      "end_ms": 9051,
+      "start_frame": 210,
+      "end_frame_exclusive": 217,
+      "boundary_type": null,
+      "confidence": 0.8705
+    },
+    {
+      "shot_id": "shot_000003",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 2,
+      "start_ms": 9009,
+      "end_ms": 11553,
+      "start_frame": 216,
+      "end_frame_exclusive": 277,
+      "boundary_type": null,
+      "confidence": 0.9996
+    },
+    {
+      "shot_id": "shot_000004",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 3,
+      "start_ms": 11512,
+      "end_ms": 14514,
+      "start_frame": 276,
+      "end_frame_exclusive": 348,
+      "boundary_type": null,
+      "confidence": 0.9996
+    },
+    {
+      "shot_id": "shot_000005",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 4,
+      "start_ms": 14473,
+      "end_ms": 17184,
+      "start_frame": 347,
+      "end_frame_exclusive": 412,
+      "boundary_type": null,
+      "confidence": 0.9999
+    },
+    {
+      "shot_id": "shot_000006",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 5,
+      "start_ms": 17142,
+      "end_ms": 20562,
+      "start_frame": 411,
+      "end_frame_exclusive": 493,
+      "boundary_type": null,
+      "confidence": 0.9963
+    },
+    {
+      "shot_id": "shot_000007",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 6,
+      "start_ms": 20520,
+      "end_ms": 26568,
+      "start_frame": 492,
+      "end_frame_exclusive": 637,
+      "boundary_type": null,
+      "confidence": 0.9998
+    },
+    {
+      "shot_id": "shot_000008",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 7,
+      "start_ms": 26526,
+      "end_ms": 35494,
+      "start_frame": 636,
+      "end_frame_exclusive": 851,
+      "boundary_type": null,
+      "confidence": 0.9995
+    },
+    {
+      "shot_id": "shot_000009",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 8,
+      "start_ms": 35452,
+      "end_ms": 38538,
+      "start_frame": 850,
+      "end_frame_exclusive": 924,
+      "boundary_type": null,
+      "confidence": 0.9998
+    },
+    {
+      "shot_id": "shot_000010",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 9,
+      "start_ms": 38497,
+      "end_ms": 47881,
+      "start_frame": 923,
+      "end_frame_exclusive": 1148,
+      "boundary_type": null,
+      "confidence": 0.9998
+    },
+    {
+      "shot_id": "shot_000011",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 10,
+      "start_ms": 47839,
+      "end_ms": 50550,
+      "start_frame": 1147,
+      "end_frame_exclusive": 1212,
+      "boundary_type": null,
+      "confidence": 0.9993
+    },
+    {
+      "shot_id": "shot_000012",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 11,
+      "start_ms": 50509,
+      "end_ms": 62771,
+      "start_frame": 1211,
+      "end_frame_exclusive": 1505,
+      "boundary_type": null,
+      "confidence": 0.9998
+    },
+    {
+      "shot_id": "shot_000013",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 12,
+      "start_ms": 62729,
+      "end_ms": 70445,
+      "start_frame": 1504,
+      "end_frame_exclusive": 1689,
+      "boundary_type": null,
+      "confidence": 0.9992
     }
-  },
-  "warnings": [
-    "Shot[1] (start=8759ms) does not follow previous end (8800ms) — gap or overlap",
-    "Shot[2] (start=9009ms) does not follow previous end (9051ms) — gap or overlap",
-    "Shot[3] (start=11512ms) does not follow previous end (11553ms) — gap or overlap",
-    "Shot[4] (start=14473ms) does not follow previous end (14514ms) — gap or overlap",
-    "Shot[5] (start=17142ms) does not follow previous end (17184ms) — gap or overlap",
-    "Shot[6] (start=20520ms) does not follow previous end (20562ms) — gap or overlap",
-    "Shot[7] (start=26526ms) does not follow previous end (26568ms) — gap or overlap",
-    "Shot[8] (start=35452ms) does not follow previous end (35494ms) — gap or overlap",
-    "Shot[9] (start=38497ms) does not follow previous end (38538ms) — gap or overlap",
-    "Shot[10] (start=47839ms) does not follow previous end (47881ms) — gap or overlap",
-    "Shot[11] (start=50509ms) does not follow previous end (50550ms) — gap or overlap",
-    "Shot[12] (start=62729ms) does not follow previous end (62771ms) — gap or overlap"
-  ],
-  "error": null
+  ]
 }

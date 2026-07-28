@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "task_id": "test_No_Cut_hard",
+  "video_id": "test_No_Cut_hard",
+  "status": "SUCCEEDED",
+  "model": {
+    "name": "omnishotcut",
+    "version": "0.1.0"
+  },
+  "artifacts": {
+    "shots": "storage://projects/test_No_/videos/test_No_Cut_hard/artifacts/omnishotcut/0.1.0/shots.json"
+  },
+  "metrics": {
+    "shot_count": 1,
+    "shot_count_raw": 4,
+    "false_positives_removed": 3,
+    "runtime_ms": 36542,
+    "frame_diff": {
+      "boundaries_checked": 3,
+      "false_positives_removed": 3,
+      "mad_min": 0.8,
+      "mad_max": 1.6,
+      "mad_mean": 1.2
+    }
+  },
+  "warnings": [],
+  "error": null
+}

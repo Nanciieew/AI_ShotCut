@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "task_id": "test_Hard_Cut_1",
+  "video_id": "test_Hard_Cut_1",
+  "status": "SUCCEEDED",
+  "model": {
+    "name": "omnishotcut",
+    "version": "0.1.0"
+  },
+  "artifacts": {
+    "shots": "storage://projects/test_Har/videos/test_Hard_Cut_1/artifacts/omnishotcut/0.1.0/shots.json"
+  },
+  "metrics": {
+    "shot_count": 3,
+    "shot_count_raw": 4,
+    "false_positives_removed": 1,
+    "runtime_ms": 17256,
+    "frame_diff": {
+      "boundaries_checked": 3,
+      "false_positives_removed": 1,
+      "mad_min": 2.6,
+      "mad_max": 63.9,
+      "mad_mean": 37.9
+    }
+  },
+  "warnings": [
+    "Shot[1] (start=19019ms) does not follow previous end (19061ms) — gap or overlap",
+    "Shot[2] (start=36328ms) does not follow previous end (36370ms) — gap or overlap"
+  ],
+  "error": null
+}
