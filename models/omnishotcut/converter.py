@@ -54,8 +54,8 @@ class ShotConverter:
         return self.fps_num / self.fps_den
 
     def frame_to_ms(self, frame: int) -> int:
-        """Convert a frame index to milliseconds (integer, rounded)."""
-        return round(frame * self.fps_den * 1000 / self.fps_num)
+        """Convert a frame index to milliseconds (floor division, exact)."""
+        return (frame * self.fps_den * 1000) // self.fps_num
 
     def convert(
         self,
@@ -65,35 +65,58 @@ class ShotConverter:
     ) -> list[ConvertedShot]:
         """Convert OmniShotCut raw frame ranges to project Shots.
 
+        Shot[i].end_ms == Shot[i+1].start_ms — guaranteed zero gap by
+        using the next shot's start frame to compute the current end_ms.
+
         Args:
             raw_ranges: [[start_frame, end_frame_inclusive], ...]
             video_id: Associated video identifier.
             boundary_type: Optional transition type label.
 
         Returns:
-            List of ConvertedShot with ms timestamps and exclusive end frames.
+            List of ConvertedShot with continuous ms timestamps.
         """
-        shots: list[ConvertedShot] = []
+        n = len(raw_ranges)
+        if n == 0:
+            return []
+        if n == 1:
+            start_frame, end_incl = raw_ranges[0]
+            end_frame_exclusive = end_incl + 1
+            return [ConvertedShot(
+                shot_id=self._shot_id(0), index=0,
+                start_ms=self.frame_to_ms(start_frame),
+                end_ms=self.frame_to_ms(end_frame_exclusive),
+                start_frame=start_frame,
+                end_frame_exclusive=end_frame_exclusive,
+                boundary_type=boundary_type,
+            )]
 
-        for idx, (start_frame, end_frame_inclusive) in enumerate(raw_ranges):
-            # OmniShotCut raw: [start, end] inclusive
-            # Project schema:   [start_ms, end_ms) exclusive
-            # end_frame_exclusive = end_frame_inclusive + 1
-            end_frame_exclusive = end_frame_inclusive + 1
+        shots: list[ConvertedShot] = []
+        for idx in range(n):
+            start_frame = raw_ranges[idx][0]
+            end_frame_exclusive = raw_ranges[idx][1] + 1  # inclusive→exclusive
 
             start_ms = self.frame_to_ms(start_frame)
-            end_ms = self.frame_to_ms(end_frame_exclusive)
+            if idx < n - 1:
+                # End = next shot's start → guaranteed zero gap
+                next_start = raw_ranges[idx + 1][0]
+                end_ms = self.frame_to_ms(next_start)
+                end_frame_exclusive = next_start
+            else:
+                # Last shot: use its own end_frame_exclusive
+                end_ms = self.frame_to_ms(end_frame_exclusive)
 
-            shot = ConvertedShot(
-                shot_id=f"shot_{idx + 1:06d}",
+            shots.append(ConvertedShot(
+                shot_id=self._shot_id(idx),
                 index=idx,
                 start_ms=start_ms,
                 end_ms=end_ms,
                 start_frame=start_frame,
                 end_frame_exclusive=end_frame_exclusive,
                 boundary_type=boundary_type,
-                confidence=None,  # clean_shot mode has no confidence
-            )
-            shots.append(shot)
-
+            ))
         return shots
+
+    @staticmethod
+    def _shot_id(index: int) -> str:
+        return f"shot_{index + 1:06d}"

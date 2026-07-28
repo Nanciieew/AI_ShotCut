@@ -14,7 +14,7 @@
     "shot_count": 3,
     "shot_count_raw": 4,
     "false_positives_removed": 1,
-    "runtime_ms": 17256,
+    "runtime_ms": 17677,
     "frame_diff": {
       "boundaries_checked": 3,
       "false_positives_removed": 1,
@@ -23,9 +23,6 @@
       "mad_mean": 37.9
     }
   },
-  "warnings": [
-    "Shot[1] (start=19019ms) does not follow previous end (19061ms) — gap or overlap",
-    "Shot[2] (start=36328ms) does not follow previous end (36370ms) — gap or overlap"
-  ],
+  "warnings": [],
   "error": null
 }
