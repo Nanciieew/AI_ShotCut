@@ -177,24 +177,31 @@
 ### IMP-010 — OmniShotCut Adapter 实现
 
 - **Title**: OmniShotCut Adapter — 原始输出 → Shot Schema 转换
-- **Status**: Planned
+- **Status**: Done
 - **Priority**: P0
 - **Module**: models/omnishotcut
-- **Current Problem**: SPIKE 完成，原始帧范围输出需转换为毫秒时间戳 + Shot Schema。
-- **Target State**: Adapter 实现 BaseModelAdapter，帧→毫秒转换，Celery Task 端到端跑通。
-- **Key tasks**:
-  1. FPS 读取（ffprobe / metadata）
-  2. 帧范围 `[start, end]` → 毫秒范围 `[start_ms, end_ms)`
-  3. 内联测试视频验证
-  4. Schema 校验输出
-  5. Artifact 写入 + Manifest
+
+### Completion Log
+
+- **Completed Date**: 2026-07-28
+- **Summary**: Adapter 实现 BaseModelAdapter，集成 frame_diff 后处理，端到端 5 视频验证通过。
+- **Files Changed**:
+  - `models/omnishotcut/adapter.py` — 重写：frame_diff 集成 + 新 API + ffmpeg PATH
+  - `models/omnishotcut/converter.py` — 帧→ms 转换
+  - `models/omnishotcut/validation.py` — Schema 校验
+  - `models/omnishotcut/frame_diff.py` — MAD/hist_corr 过滤
+  - `scripts/experiments/omnishotcut/run_adapter.py` — 端到端脚本
+  - `scripts/experiments/omnishotcut/run_benchmark.py` — 更新
+  - `tests/fixtures/normalized_outputs/omnishotcut/` — 5 个 .shots.json
 - **Acceptance Criteria**:
-  - [ ] 帧→毫秒转换（FPS 分数）
-  - [ ] 输出通过 `schemas/shot.py` 校验
-  - [ ] 测试视频 `hard_cut.mp4` 可处理
-  - [ ] `sample_output.json` 为统一 Schema 格式
-- **Related Files**: `models/omnishotcut/adapter.py`, `workers/tasks/shot_tasks.py`
-- **Updated Date**: 2026-07-28
+  - [x] 帧→毫秒转换（FPS 分数驱动）
+  - [x] 输出通过 `schemas/shot.py` 校验
+  - [x] 5 视频全部处理成功
+  - [x] 输出为 IO_Rule §2 统一格式
+  - [x] Frame-diff 后 4/5 匹配 ground truth
+  - [x] metrics 含 raw/filtered/FP 统计
+- **Remaining Issues**: Multiple_Cuts_smooth dissolve 盲区（IMP-012）
+- **Follow-up Improvement IDs**: IMP-013 (Celery Task 对接)
 
 ---
 

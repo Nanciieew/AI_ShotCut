@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "task_id": "test_No_Cut_easy",
+  "video_id": "test_No_Cut_easy",
+  "status": "SUCCEEDED",
+  "model": {
+    "name": "omnishotcut",
+    "version": "0.1.0"
+  },
+  "artifacts": {
+    "shots": ""
+  },
+  "metrics": {
+    "shot_count_raw": 1,
+    "shot_count_filtered": 1,
+    "false_positives_removed": 0,
+    "runtime_ms": 36142,
+    "frame_diff": {
+      "boundaries_checked": 0,
+      "false_positives_removed": 0
+    }
+  },
+  "warnings": [],
+  "error": null
+}

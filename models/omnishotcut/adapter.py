@@ -2,14 +2,18 @@
 
 Implements BaseModelAdapter. Handles:
   - Model loading / unloading
-  - Raw inference call
-  - Frame → ms conversion
-  - Output validation
+  - Raw inference call (clean_shot with confidences)
+  - Frame-diff false-positive filtering (MAD < 5.0)
+  - Frame → ms conversion (ShotConverter)
+  - Output validation (validate_shot_output)
   - Error mapping to standard error codes
 
-Status: SPIKE — core logic in place, full integration pending.
+Status: TESTING — integrated with frame_diff, ready for Celery Task.
 """
 
+import os
+import time
+from pathlib import Path
 from typing import Any
 
 from models.base.adapter import BaseModelAdapter
@@ -25,12 +29,16 @@ FIXED_COMMIT = "23ad6fb41b296fb9258b0e7825125a914573b906"
 HF_REPO = "uva-cv-lab/OmniShotCut"
 HF_FILENAME = "OmniShotCut_ckpt.pth"
 
+# Frame-diff thresholds (empirically calibrated)
+MAD_THRESHOLD = 5.0
+HIST_CORR_THRESHOLD = 0.95
+
 
 class OmniShotCutAdapter(BaseModelAdapter):
     """Adapter for OmniShotCut shot boundary detection.
 
     Wraps the third-party omnishotcut package and enforces the
-    project's unified input/output contract.
+    project's unified input/output contract (IO_Rule.md).
     """
 
     name = "omnishotcut"
@@ -48,6 +56,7 @@ class OmniShotCutAdapter(BaseModelAdapter):
         """Load OmniShotCut model weights.
 
         Uses: model_store/omnishotcut/1.0.0/OmniShotCut_ckpt.pth
+        Auto-downloads from HuggingFace Hub if missing.
         """
         if self._loaded:
             return
@@ -57,15 +66,12 @@ class OmniShotCutAdapter(BaseModelAdapter):
         except ImportError:
             raise OmniShotCutImportError()
 
-        import os
-
         weight_path = os.path.join(
             os.getenv("MODEL_STORE_ROOT", "./model_store"),
             "omnishotcut/1.0.0/OmniShotCut_ckpt.pth",
         )
 
         if not os.path.exists(weight_path):
-            # Try downloading from HuggingFace Hub
             from huggingface_hub import hf_hub_download
 
             os.makedirs(os.path.dirname(weight_path), exist_ok=True)
@@ -74,6 +80,9 @@ class OmniShotCutAdapter(BaseModelAdapter):
                 filename=HF_FILENAME,
                 local_dir=os.path.dirname(weight_path),
             )
+
+        # Ensure FFmpeg is on PATH before model load (model uses ffmpeg internally)
+        self._ensure_ffmpeg_path()
 
         self._model = omnishotcut.load(weight_path)
         self._loaded = True
@@ -91,15 +100,19 @@ class OmniShotCutAdapter(BaseModelAdapter):
     # ------------------------------------------------------------------
 
     def predict(self, model_input: dict[str, Any]) -> dict[str, Any]:
-        """Run OmniShotCut inference.
+        """Run OmniShotCut inference with frame-diff post-filtering.
 
         Input (per IO_Rule §4.1):
-            schema_version, task_id, video_id,
-            model: {name, version},
-            input: {video_uri},
-            parameters: {mode: "clean_shot"}
+            {
+                "schema_version": "1.0",
+                "task_id": "task_001",
+                "video_id": "video_001",
+                "model": {"name": "omnishotcut", "version": "0.1.0"},
+                "input": {"video_uri": "storage://path/to/video.mp4"},
+                "parameters": {"mode": "clean_shot"}
+            }
 
-        Returns unified success/failure output.
+        Returns unified success/failure output per IO_Rule §2/§3.
         """
         if not self._loaded:
             self.load()
@@ -111,14 +124,8 @@ class OmniShotCutAdapter(BaseModelAdapter):
         mode = model_input.get("parameters", {}).get("mode", "clean_shot")
 
         try:
-            # --- Raw inference ---
-            import time
-            import os
-            from pathlib import Path
-
-            # Convert storage:// URI to local path
+            # --- Resolve video path ---
             video_path = self._resolve_uri(video_uri)
-
             if not os.path.exists(video_path):
                 return self._error(
                     task_id, video_id, schema_version,
@@ -127,29 +134,44 @@ class OmniShotCutAdapter(BaseModelAdapter):
                     retryable=False,
                 )
 
-            # Get FPS via ffprobe
+            # --- Get FPS ---
             fps_num, fps_den = self._get_fps(video_path)
 
+            # --- Raw inference ---
             t0 = time.monotonic()
-            raw_ranges = self._model.inference(str(video_path), mode=mode)
+            raw_ranges, confidences = self._model.inference(str(video_path), mode=mode)
             runtime_ms = int((time.monotonic() - t0) * 1000)
+
+            # --- Frame-diff post-filter ---
+            filtered_ranges, fd_stats = self._apply_frame_diff(
+                video_path, raw_ranges
+            )
 
             # --- Convert frames → ms ---
             converter = ShotConverter(fps_num=fps_num, fps_den=fps_den)
-            converted = converter.convert(raw_ranges, video_id=video_id)
+            converted = converter.convert(filtered_ranges, video_id=video_id)
 
-            # Build output
-            shots_list = [{
-                "shot_id": s.shot_id,
-                "video_id": video_id,
-                "index": s.index,
-                "start_ms": s.start_ms,
-                "end_ms": s.end_ms,
-                "start_frame": s.start_frame,
-                "end_frame_exclusive": s.end_frame_exclusive,
-                "boundary_type": s.boundary_type,
-                "confidence": s.confidence,
-            } for s in converted]
+            # Build shots + attach avg confidence from raw detection
+            shots_list = []
+            for s in converted:
+                # Find matching raw confidence
+                conf = None
+                for r, c in zip(raw_ranges, confidences):
+                    if r[0] <= s.start_frame < r[1]:
+                        conf = (c.get("intra_conf", 0) + c.get("inter_conf", 0)) / 2
+                        break
+
+                shots_list.append({
+                    "shot_id": s.shot_id,
+                    "video_id": video_id,
+                    "index": s.index,
+                    "start_ms": s.start_ms,
+                    "end_ms": s.end_ms,
+                    "start_frame": s.start_frame,
+                    "end_frame_exclusive": s.end_frame_exclusive,
+                    "boundary_type": s.boundary_type,
+                    "confidence": round(conf, 4) if conf else None,
+                })
 
             # --- Validate ---
             validation = validate_shot_output({
@@ -167,15 +189,28 @@ class OmniShotCutAdapter(BaseModelAdapter):
                 )
 
             return self._success(
-                task_id, video_id, schema_version,
+                task_id=task_id,
+                video_id=video_id,
+                schema_version=schema_version,
                 artifact_key="shots",
-                artifact_uri="",  # filled by Celery Task after save
+                artifact_uri="",  # filled by Celery Task
                 metrics={
-                    "shot_count": len(shots_list),
+                    "shot_count_raw": len(raw_ranges),
+                    "shot_count_filtered": len(filtered_ranges),
+                    "false_positives_removed": len(raw_ranges) - len(filtered_ranges),
                     "runtime_ms": runtime_ms,
+                    "frame_diff": fd_stats,
                 },
+                warnings=validation.get("warnings", []),
             )
 
+        except OmniShotCutImportError:
+            return self._error(
+                task_id, video_id, schema_version,
+                "OMNISHOTCUT_IMPORT_ERROR",
+                "OmniShotCut is not installed.",
+                retryable=False,
+            )
         except Exception as e:
             return self._error(
                 task_id, video_id, schema_version,
@@ -194,16 +229,59 @@ class OmniShotCutAdapter(BaseModelAdapter):
         return True
 
     # ------------------------------------------------------------------
+    # Frame-diff filter
+    # ------------------------------------------------------------------
+
+    def _apply_frame_diff(
+        self, video_path: str, raw_ranges: list[list[int]]
+    ) -> tuple[list[list[int]], dict]:
+        """Run frame-difference validation and filter false positives.
+
+        Returns (filtered_ranges, stats_dict).
+        """
+        if len(raw_ranges) <= 1:
+            return raw_ranges, {"boundaries_checked": 0, "false_positives_removed": 0}
+
+        try:
+            from models.omnishotcut.frame_diff import FrameDiffValidator
+
+            validator = FrameDiffValidator(
+                mad_threshold=MAD_THRESHOLD,
+                hist_threshold=HIST_CORR_THRESHOLD,
+            )
+            report = validator.validate(video_path, raw_ranges)
+            filtered = validator.filter_by_diff(raw_ranges, report)
+
+            return filtered, {
+                "boundaries_checked": report.stats.get("total_boundaries", 0),
+                "false_positives_removed": report.stats.get("false_positive_count", 0),
+                "mad_min": report.stats.get("mad_min"),
+                "mad_max": report.stats.get("mad_max"),
+                "mad_mean": report.stats.get("mad_mean"),
+            }
+        except Exception:
+            # If frame-diff fails, return raw ranges unfiltered
+            return raw_ranges, {"boundaries_checked": 0, "false_positives_removed": 0, "error": "frame_diff_failed"}
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _ensure_ffmpeg_path() -> None:
+        """Ensure FFmpeg/ffprobe are on PATH."""
+        try:
+            import imageio_ffmpeg
+            ff_dir = str(Path(imageio_ffmpeg.get_ffmpeg_exe()).parent)
+            os.environ["PATH"] = ff_dir + os.pathsep + os.environ.get("PATH", "")
+        except ImportError:
+            pass  # rely on system ffmpeg
 
     @staticmethod
     def _resolve_uri(uri: str) -> str:
         """Convert storage:// URI to local absolute path."""
         prefix = "storage://"
         if uri.startswith(prefix):
-            import os
-
             root = os.getenv("STORAGE_ROOT", "./data")
             return os.path.join(root, uri[len(prefix):])
         return uri
@@ -211,18 +289,15 @@ class OmniShotCutAdapter(BaseModelAdapter):
     @staticmethod
     def _get_fps(video_path: str) -> tuple[int, int]:
         """Extract FPS as num/den from video via ffprobe."""
-        import subprocess
         import json
+        import subprocess
 
         try:
             result = subprocess.run(
-                [
-                    "ffprobe", "-v", "quiet",
-                    "-select_streams", "v:0",
-                    "-show_entries", "stream=r_frame_rate",
-                    "-of", "json",
-                    video_path,
-                ],
+                ["ffprobe", "-v", "quiet",
+                 "-select_streams", "v:0",
+                 "-show_entries", "stream=r_frame_rate",
+                 "-of", "json", video_path],
                 capture_output=True, text=True, timeout=15,
             )
             info = json.loads(result.stdout)
@@ -230,13 +305,14 @@ class OmniShotCutAdapter(BaseModelAdapter):
             num, den = fps_str.split("/")
             return int(num), int(den)
         except Exception:
-            return 24000, 1001  # default NTSC film
+            return 24000, 1001
 
     @staticmethod
     def _success(
         task_id: str, video_id: str, schema_version: str,
         artifact_key: str, artifact_uri: str, metrics: dict,
-    ) -> dict:
+        warnings: list[str] | None = None,
+    ) -> dict[str, Any]:
         return {
             "schema_version": schema_version,
             "task_id": task_id,
@@ -245,6 +321,7 @@ class OmniShotCutAdapter(BaseModelAdapter):
             "model": {"name": "omnishotcut", "version": "0.1.0"},
             "artifacts": {artifact_key: artifact_uri},
             "metrics": metrics,
+            "warnings": warnings or [],
             "error": None,
         }
 
@@ -252,7 +329,7 @@ class OmniShotCutAdapter(BaseModelAdapter):
     def _error(
         task_id: str, video_id: str, schema_version: str,
         code: str, message: str, retryable: bool,
-    ) -> dict:
+    ) -> dict[str, Any]:
         return {
             "schema_version": schema_version,
             "task_id": task_id,
