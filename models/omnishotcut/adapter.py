@@ -299,22 +299,31 @@ class OmniShotCutAdapter(BaseModelAdapter):
 
     @staticmethod
     def _get_fps(video_path: str) -> tuple[int, int]:
-        """Extract FPS as num/den from video via ffprobe."""
-        import json
+        """Extract FPS as num/den from video via FFmpeg."""
+        import re
         import subprocess
 
         try:
+            from imageio_ffmpeg import get_ffmpeg_exe
+            ffmpeg = get_ffmpeg_exe()
+        except ImportError:
+            ffmpeg = "ffmpeg"
+
+        try:
             result = subprocess.run(
-                ["ffprobe", "-v", "quiet",
-                 "-select_streams", "v:0",
-                 "-show_entries", "stream=r_frame_rate",
-                 "-of", "json", video_path],
+                [ffmpeg, "-i", video_path],
                 capture_output=True, text=True, timeout=15,
             )
-            info = json.loads(result.stdout)
-            fps_str = info["streams"][0]["r_frame_rate"]
-            num, den = fps_str.split("/")
-            return int(num), int(den)
+            # ffmpeg prints info to stderr: "Stream #0:0: ... 30 fps ..."
+            for line in (result.stderr + result.stdout).split("\n"):
+                if "Stream #0:0" in line:
+                    m = re.search(r"(\d+)\s*fps", line)
+                    if m:
+                        return int(m.group(1)), 1
+                    m = re.search(r"(\d+)/(\d+)\s*fps", line)
+                    if m:
+                        return int(m.group(1)), int(m.group(2))
+            return 24000, 1001
         except Exception:
             return 24000, 1001
 

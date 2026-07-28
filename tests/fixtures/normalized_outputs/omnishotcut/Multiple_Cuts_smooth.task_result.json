@@ -14,7 +14,7 @@
     "shot_count": 3,
     "shot_count_raw": 3,
     "false_positives_removed": 0,
-    "runtime_ms": 26140,
+    "runtime_ms": 23983,
     "frame_diff": {
       "boundaries_checked": 2,
       "false_positives_removed": 0,
