@@ -1,6 +1,6 @@
-"""Artifact manifest Pydantic schemas."""
+"""Artifact manifest Pydantic schemas — re-exported from core.artifacts."""
 
-from core.artifacts.manifest import (
+from core.artifacts import (
     ArtifactManifest,
     ArtifactProducer,
     ArtifactInputRef,
