@@ -95,8 +95,7 @@ services:
       - ENVIRONMENT=development
     volumes:
       - .:/app
-      - data-volume:/data
-      - model-store-volume:/models
+      - ./data:/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -129,8 +128,9 @@ services:
       - ENVIRONMENT=development
     volumes:
       - .:/app
-      - data-volume:/data
-      - model-store-volume:/models
+      - ./data:/data
+      - ./model_store:/models:ro
+      - worker-pip-cache:/root/.cache/pip
     depends_on:
       postgres:
         condition: service_healthy
@@ -146,3 +146,4 @@ volumes:
   model-store-volume:
   redis-data:
   postgres-data:
+  worker-pip-cache:

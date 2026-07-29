@@ -1,23 +1,25 @@
 # OmniShotCut model dependencies
-# Status: SPIKE (installed, tested, Adapter pending)
+# Source: https://github.com/UVA-Computer-Vision-Lab/OmniShotCut @ 23ad6fb
+# Verified from: pyproject.toml + requirements.txt + README.md
 #
-# Install OmniShotCut:
-#   pip install git+https://github.com/UVA-Computer-Vision-Lab/OmniShotCut.git@23ad6fb41b296fb9258b0e7825125a914573b906
-#
-# Base worker dependencies
--r ../worker.txt
+# Install:
+#   pip install -r requirements/worker.txt
+#   pip install -r requirements/models/omnishotcut.txt
 
-# --- OmniShotCut 0.1.0 (commit 23ad6fb, MIT License) ---
-# Weights: HuggingFace Hub uva-cv-lab/OmniShotCut (MIT, 156.5 MB)
-# SHA256: 5948ea78e00626c0e6c5e742e64873ef872cf4a5071d2a0841aed51c3e686cfa
-omnishotcut @ git+https://github.com/UVA-Computer-Vision-Lab/OmniShotCut.git@23ad6fb41b296fb9258b0e7825125a914573b906
-
-# --- Required by OmniShotCut ---
+# --- PyTorch CPU (no GPU available) ---
+# Install first! Override to CPU-only:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 torch>=2.0
-torchvision>=0.15
+torchvision
+
+# --- Core deps (pyproject.toml) ---
 numpy>=1.26
-ffmpeg-python>=0.2
-opencv-python>=4.8
+ffmpeg-python==0.2.*
+opencv-python-headless>=4.8
 huggingface_hub>=0.25
 Pillow>=10.0
-packaging>=23.0
+packaging>=24.0
+
+# --- OmniShotCut package (fixed commit) ---
+# Installed via: pip install git+https://github.com/UVA-Computer-Vision-Lab/OmniShotCut.git@23ad6fb
+# Listed here for documentation; actual install handled by Dockerfile

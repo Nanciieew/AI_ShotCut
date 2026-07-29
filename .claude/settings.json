@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/c/Users/Administrator/anaconda3/python -m pytest tests/unit/core/environment/ -v --noconftest)",
+      "Bash(/c/Users/Administrator/anaconda3/python scripts/check_environment.py)",
+      "Bash(/c/Users/Administrator/anaconda3/python -c ' *)"
+    ]
+  }
+}

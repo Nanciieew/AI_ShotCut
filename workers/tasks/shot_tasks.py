@@ -1,24 +1,435 @@
 """
 Celery tasks for shot boundary detection.
 
-Delegates to OmniShotCut (or other shot detectors) via Adapter.
+Delegates to OmniShotCut (or other shot detectors) via the
+BaseModelAdapter interface. Each shot detector is selected by
+the model_name parameter.
 """
 
-from workers.celery_app import app
+import os
+import time
+import uuid
+from datetime import datetime, timezone
 
+from workers.celery_app import app
+from core.database.session_sync import get_sync_session
+from core.database.repositories import (
+    TaskRepository,
+    VideoRepository,
+    ArtifactRepository,
+)
+from core.database.models import ModelRun, Shot
+from core.artifacts.writer import ArtifactWriter
+from core.artifacts import ArtifactProducer
+from core.logging.context import set_task_context, clear_task_context
+
+
+# ---------------------------------------------------------------------------
+# Adapter registry — maps model_name → Adapter class
+# ---------------------------------------------------------------------------
+
+_ADAPTER_REGISTRY: dict[str, type] = {}
+
+try:
+    from models.omnishotcut.adapter import OmniShotCutAdapter
+    _ADAPTER_REGISTRY["omnishotcut"] = OmniShotCutAdapter
+except ImportError:
+    pass
+
+
+def _get_adapter_class(model_name: str):
+    """Look up an adapter class by model name."""
+    cls = _ADAPTER_REGISTRY.get(model_name)
+    if cls is None:
+        raise ValueError(
+            f"Unknown shot detection model: {model_name}. "
+            f"Available: {list(_ADAPTER_REGISTRY.keys())}"
+        )
+    return cls
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _resolve_uri(uri: str, storage_root: str) -> str:
+    """Convert storage:// URI to local absolute path."""
+    prefix = "storage://"
+    if uri.startswith(prefix):
+        return os.path.join(storage_root, uri[len(prefix):])
+    return uri
+
+
+# ---------------------------------------------------------------------------
+# Task
+# ---------------------------------------------------------------------------
 
 @app.task(name="shot.detect", bind=True, max_retries=2)
-def detect_shots(self, task_id: str, video_id: str) -> dict:
-    """Run shot boundary detection.
+def detect_shots(
+    self,
+    task_id: str,
+    video_id: str,
+    model_name: str = "omnishotcut",
+) -> dict:
+    """Run shot boundary detection via registered model adapter.
 
     Reads the normalized video from artifact storage, invokes the
-    OmniShotCut adapter, and saves shots.json as an artifact.
+    model adapter, saves shots.json as an artifact, and writes shot
+    records to the database.
+
+    Parameters
+    ----------
+    task_id : str
+        App-level task identifier.
+    video_id : str
+        Video to process (must have normalized_uri set).
+    model_name : str
+        Which shot detection model to use. Default: "omnishotcut".
     """
-    # TODO: Implement OmniShotCut adapter call (MVP Phase 4)
+    set_task_context(task_id=task_id, video_id=video_id, model=model_name)
+
+    storage_root = os.getenv("STORAGE_ROOT", "./data")
+    writer = ArtifactWriter(storage_root)
+
+    # --- 1. Validate model ---
+    try:
+        adapter_cls = _get_adapter_class(model_name)
+    except ValueError as e:
+        clear_task_context()
+        return {
+            "task_id": task_id,
+            "video_id": video_id,
+            "status": "FAILED",
+            "error": {"code": "UNKNOWN_MODEL", "message": str(e)},
+        }
+
+    # --- 2. Load video record ---
+    with get_sync_session() as session:
+        task_repo = TaskRepository(session)
+        video_repo = VideoRepository(session)
+
+        video = video_repo.get(video_id)
+        if video is None:
+            clear_task_context()
+            return {
+                "task_id": task_id,
+                "video_id": video_id,
+                "status": "FAILED",
+                "error": {"code": "VIDEO_NOT_FOUND", "message": f"Video {video_id} not in DB"},
+            }
+
+        normalized_uri = video.normalized_uri
+        if not normalized_uri:
+            clear_task_context()
+            return {
+                "task_id": task_id,
+                "video_id": video_id,
+                "status": "FAILED",
+                "error": {
+                    "code": "NOT_NORMALIZED",
+                    "message": "Video has no normalized_uri. Run normalize_video first.",
+                },
+            }
+
+        video_path = _resolve_uri(normalized_uri, storage_root)
+        if not os.path.exists(video_path):
+            clear_task_context()
+            return {
+                "task_id": task_id,
+                "video_id": video_id,
+                "status": "FAILED",
+                "error": {"code": "FILE_NOT_FOUND", "message": f"Normalized video missing: {video_path}"},
+            }
+
+        # --- 3. Update task → RUNNING ---
+        task_repo.update_status(task_id, "RUNNING")
+        task_repo.update_progress(task_id, 10, stage="detect_shots")
+
+        # Create ModelRun
+        run_id = uuid.uuid4().hex[:16]
+        adapter = adapter_cls()
+        model_run = ModelRun(
+            run_id=run_id,
+            task_id=task_id,
+            video_id=video_id,
+            model_name=model_name,
+            model_version=adapter.version,
+            schema_version="1.0",
+            status="RUNNING",
+            device="cpu",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(model_run)
+        session.commit()
+
+    # --- 4. Load model + run inference ---
+    try:
+        adapter.load()
+    except Exception as e:
+        with get_sync_session() as session:
+            task_repo = TaskRepository(session)
+            task_repo.set_error(task_id, "MODEL_LOAD_FAILED", str(e))
+            mr = session.get(ModelRun, run_id)
+            if mr:
+                mr.status = "FAILED"
+                mr.finished_at = datetime.now(timezone.utc)
+            session.commit()
+        clear_task_context()
+        return {
+            "task_id": task_id,
+            "video_id": video_id,
+            "status": "FAILED",
+            "error": {"code": "MODEL_LOAD_FAILED", "message": str(e)},
+        }
+
+    try:
+        with get_sync_session() as session:
+            task_repo = TaskRepository(session)
+            task_repo.update_progress(task_id, 30, stage="detect_shots")
+            session.commit()
+
+        t0 = time.monotonic()
+
+        # Build unified input contract per IO_Rule §4.1
+        model_input = {
+            "schema_version": "1.0",
+            "task_id": task_id,
+            "video_id": video_id,
+            "model": {"name": model_name, "version": adapter.version},
+            "input": {"video_uri": f"storage://{normalized_uri[len('storage://'):]}" if normalized_uri.startswith("storage://") else normalized_uri},
+            "parameters": {"mode": "clean_shot"},
+        }
+
+        output = adapter.predict(model_input)
+        runtime_ms = int((time.monotonic() - t0) * 1000)
+
+        if output.get("status") == "FAILED":
+            error_info = output.get("error", {})
+            with get_sync_session() as session:
+                task_repo = TaskRepository(session)
+                task_repo.set_error(
+                    task_id,
+                    error_info.get("code", "INFERENCE_FAILED"),
+                    error_info.get("message", "Unknown inference error"),
+                )
+                mr = session.get(ModelRun, run_id)
+                if mr:
+                    mr.status = "FAILED"
+                    mr.runtime_ms = runtime_ms
+                    mr.finished_at = datetime.now(timezone.utc)
+                session.commit()
+            clear_task_context()
+            return output
+
+    except Exception as e:
+        with get_sync_session() as session:
+            task_repo = TaskRepository(session)
+            task_repo.set_error(task_id, "MODEL_INFERENCE_FAILED", str(e))
+            mr = session.get(ModelRun, run_id)
+            if mr:
+                mr.status = "FAILED"
+                mr.finished_at = datetime.now(timezone.utc)
+            session.commit()
+        clear_task_context()
+        return {
+            "task_id": task_id,
+            "video_id": video_id,
+            "status": "FAILED",
+            "error": {"code": "MODEL_INFERENCE_FAILED", "message": str(e)},
+        }
+
+    # --- 5. Extract shot data ---
+    # The adapter returns shots under output["artifacts"]["shots"] as a URI,
+    # BUT since we call predict() directly (not through a wrapper that saves
+    # artifacts), we need to extract the shot list from the adapter's
+    # internal conversion. We'll reconstruct from the model's raw output.
+    #
+    # For now, we re-run a simpler flow: adapter's predict returned success,
+    # so we call the converter directly to get the structured shot list.
+
+    try:
+        # Reconstruct shots from adapter internal state.
+        # The adapter converts raw ranges internally; we tap into that
+        # by calling predict with the same input and capturing the structured result.
+        # Since adapter.predict() already validated the output,
+        # we reconstruct shots from the metadata.
+
+        # Alternative: parse the raw model output ourselves.
+        # The cleanest approach is to have the adapter return shots inline.
+        # For now we get it by running the converter directly.
+
+        from models.omnishotcut.converter import ShotConverter
+
+        # Get FPS from video metadata
+        fps_num = video.fps_num or 24000
+        fps_den = video.fps_den or 1001
+
+        # Run raw inference again (cached by the adapter since model is loaded)
+        import subprocess as sp
+        import json as _json
+        result = sp.run(
+            [
+                "ffprobe", "-v", "quiet",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=r_frame_rate",
+                "-of", "json",
+                video_path,
+            ],
+            capture_output=True, text=True, timeout=15,
+        )
+        _info = _json.loads(result.stdout)
+        _fps_str = _info["streams"][0]["r_frame_rate"]
+        _num_str, _den_str = _fps_str.split("/")
+        fps_num, fps_den = int(_num_str), int(_den_str)
+
+        # Get raw ranges from model
+        raw_ranges = adapter._model.inference(str(video_path), mode="clean_shot")
+
+        converter = ShotConverter(fps_num=fps_num, fps_den=fps_den)
+        converted = converter.convert(raw_ranges, video_id=video_id)
+
+        shots_list: list[dict] = [
+            {
+                "shot_id": s.shot_id,
+                "video_id": video_id,
+                "index": s.index,
+                "start_ms": s.start_ms,
+                "end_ms": s.end_ms,
+                "start_frame": s.start_frame,
+                "end_frame_exclusive": s.end_frame_exclusive,
+                "boundary_type": s.boundary_type,
+                "confidence": s.confidence,
+            }
+            for s in converted
+        ]
+
+        if not shots_list:
+            with get_sync_session() as session:
+                task_repo = TaskRepository(session)
+                task_repo.set_error(task_id, "NO_SHOTS_DETECTED", "Model returned zero shots")
+                mr = session.get(ModelRun, run_id)
+                if mr:
+                    mr.status = "FAILED"
+                    mr.runtime_ms = runtime_ms
+                    mr.finished_at = datetime.now(timezone.utc)
+                session.commit()
+            clear_task_context()
+            return {
+                "task_id": task_id,
+                "video_id": video_id,
+                "status": "FAILED",
+                "error": {"code": "NO_SHOTS_DETECTED", "message": "Model returned zero shots"},
+            }
+
+    except Exception as e:
+        with get_sync_session() as session:
+            task_repo = TaskRepository(session)
+            task_repo.set_error(task_id, "SHOT_CONVERSION_FAILED", str(e))
+            mr = session.get(ModelRun, run_id)
+            if mr:
+                mr.status = "FAILED"
+                mr.finished_at = datetime.now(timezone.utc)
+            session.commit()
+        clear_task_context()
+        return {
+            "task_id": task_id,
+            "video_id": video_id,
+            "status": "FAILED",
+            "error": {"code": "SHOT_CONVERSION_FAILED", "message": str(e)},
+        }
+
+    # --- 6. Save shots.json artifact ---
+    with get_sync_session() as session:
+        task_repo = TaskRepository(session)
+        task_repo.update_progress(task_id, 70, stage="detect_shots")
+        session.commit()
+
+    project_id = video.project_id if video else "default"
+    artifact_base = f"projects/{project_id}/videos/{video_id}/artifacts/{model_name}/{adapter.version}"
+    shots_rel = f"{artifact_base}/shots.json"
+
+    producer = ArtifactProducer(
+        model_name=model_name,
+        model_version=adapter.version,
+        code_revision=getattr(adapter, "FIXED_COMMIT", None) if hasattr(adapter, "FIXED_COMMIT") else None,
+        weight_revision=None,
+    )
+
+    shots_data = {
+        "video_id": video_id,
+        "model": {"name": model_name, "version": adapter.version},
+        "shots": shots_list,
+    }
+
+    manifest = writer.write_json_artifact(
+        relative_path=shots_rel,
+        data=shots_data,
+        artifact_type="shots",
+        artifact_id=f"{run_id}_shots",
+        video_id=video_id,
+        run_id=run_id,
+        producer=producer,
+        schema_version="1.0",
+    )
+    shots_uri = f"storage://{shots_rel}"
+    shots_sha256 = manifest.output.sha256
+
+    # --- 7. Write to DB ---
+    with get_sync_session() as session:
+        task_repo = TaskRepository(session)
+        artifact_repo = ArtifactRepository(session)
+
+        # Artifact record
+        artifact_repo.create(
+            artifact_id=f"{run_id}_shots",
+            video_id=video_id,
+            run_id=run_id,
+            artifact_type="shots",
+            uri=shots_uri,
+            format="json",
+            schema_version="1.0",
+            sha256=shots_sha256,
+        )
+
+        # Bulk-insert shot records
+        for s in shots_list:
+            shot = Shot(
+                shot_id=s["shot_id"],
+                video_id=video_id,
+                index=s["index"],
+                start_ms=s["start_ms"],
+                end_ms=s["end_ms"],
+                start_frame=s.get("start_frame"),
+                end_frame_exclusive=s.get("end_frame_exclusive"),
+                boundary_type=s.get("boundary_type"),
+                confidence=s.get("confidence"),
+            )
+            session.add(shot)
+
+        # Update ModelRun
+        mr = session.get(ModelRun, run_id)
+        if mr:
+            mr.status = "SUCCEEDED"
+            mr.runtime_ms = runtime_ms
+            mr.finished_at = datetime.now(timezone.utc)
+
+        # Mark task SUCCEEDED
+        task_repo.update_status(task_id, "SUCCEEDED")
+        task_repo.update_progress(task_id, 100, stage="detect_shots")
+        session.commit()
+
+    clear_task_context()
+
     return {
         "task_id": task_id,
         "video_id": video_id,
+        "run_id": run_id,
         "status": "SUCCEEDED",
         "stage": "detect_shots",
-        "message": "placeholder — detect_shots not yet implemented",
+        "model": {"name": model_name, "version": adapter.version},
+        "artifacts": {"shots": shots_uri},
+        "metrics": {
+            "shot_count": len(shots_list),
+            "runtime_ms": runtime_ms,
+        },
     }

@@ -20,4 +20,5 @@ python-dotenv==1.0.*
 structlog==24.4.*
 
 # --- Utilities ---
+psutil==7.0.*
 typing-extensions==4.12.*
