@@ -11,9 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libavcodec-extra \
     && rm -rf /var/lib/apt/lists/*
 
-# Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Python dependencies — use split requirements for smaller layer
+COPY requirements/ requirements/
+
+RUN pip install --no-cache-dir -r requirements/api.txt
 
 COPY . .
 

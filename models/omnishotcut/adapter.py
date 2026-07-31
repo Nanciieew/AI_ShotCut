@@ -140,8 +140,20 @@ class OmniShotCutAdapter(BaseModelAdapter):
 
             # --- Raw inference ---
             t0 = time.monotonic()
-            raw_ranges, confidences = self._model.inference(str(video_path), mode=mode)
+            result = self._model.inference(str(video_path), mode=mode)
             runtime_ms = int((time.monotonic() - t0) * 1000)
+
+            # In clean_shot mode, inference returns ranges only.
+            # In default mode, it returns (ranges, intra_labels, inter_labels).
+            if mode == "clean_shot":
+                raw_ranges = result
+                confidences = [{"intra_conf": 1.0, "inter_conf": 1.0}] * len(result)
+            else:
+                raw_ranges, raw_intra, raw_inter = result
+                confidences = [
+                    {"intra_conf": 1.0, "inter_conf": 1.0}
+                    for _ in raw_ranges
+                ]
 
             # --- Frame-diff post-filter ---
             filtered_ranges, fd_stats = self._apply_frame_diff(

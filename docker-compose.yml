@@ -16,8 +16,6 @@
 #   docker compose logs -f worker     # Follow worker logs
 #   docker compose down               # Stop all services
 
-version: "3.9"
-
 services:
   # --- PostgreSQL (Database) ---
   postgres:

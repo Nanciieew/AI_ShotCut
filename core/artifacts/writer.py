@@ -135,9 +135,9 @@ class ArtifactWriter:
         manifest_tmp = manifest_path.with_suffix(manifest_path.suffix + ".tmp")
         manifest_tmp.write_bytes(manifest_json)
 
-        # Atomic rename both
-        tmp_path.rename(full_path)
-        manifest_tmp.rename(manifest_path)
+        # Atomic rename both (use replace for cross-platform safety)
+        tmp_path.replace(full_path)
+        manifest_tmp.replace(manifest_path)
 
         return manifest
 

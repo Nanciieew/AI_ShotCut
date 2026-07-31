@@ -238,14 +238,10 @@ def detect_shots(
             "error": {"code": "MODEL_INFERENCE_FAILED", "message": str(e)},
         }
 
-    # --- 5. Extract shot data ---
-    # The adapter returns shots under output["artifacts"]["shots"] as a URI,
-    # BUT since we call predict() directly (not through a wrapper that saves
-    # artifacts), we need to extract the shot list from the adapter's
-    # internal conversion. We'll reconstruct from the model's raw output.
-    #
-    # For now, we re-run a simpler flow: adapter's predict returned success,
-    # so we call the converter directly to get the structured shot list.
+    # --- 5. Extract shot data from adapter ---
+    # adapter.predict() already completed: raw inference →
+    # frame-diff filtering → ShotConverter → validation.
+    # The structured shot list is available via adapter._last_shots.
 
     try:
         # Reconstruct shots from adapter internal state.
@@ -258,50 +254,9 @@ def detect_shots(
         # The cleanest approach is to have the adapter return shots inline.
         # For now we get it by running the converter directly.
 
-        from models.omnishotcut.converter import ShotConverter
-
-        # Get FPS from video metadata
-        fps_num = video.fps_num or 24000
-        fps_den = video.fps_den or 1001
-
-        # Run raw inference again (cached by the adapter since model is loaded)
-        import subprocess as sp
-        import json as _json
-        result = sp.run(
-            [
-                "ffprobe", "-v", "quiet",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=r_frame_rate",
-                "-of", "json",
-                video_path,
-            ],
-            capture_output=True, text=True, timeout=15,
-        )
-        _info = _json.loads(result.stdout)
-        _fps_str = _info["streams"][0]["r_frame_rate"]
-        _num_str, _den_str = _fps_str.split("/")
-        fps_num, fps_den = int(_num_str), int(_den_str)
-
-        # Get raw ranges from model
-        raw_ranges = adapter._model.inference(str(video_path), mode="clean_shot")
-
-        converter = ShotConverter(fps_num=fps_num, fps_den=fps_den)
-        converted = converter.convert(raw_ranges, video_id=video_id)
-
-        shots_list: list[dict] = [
-            {
-                "shot_id": s.shot_id,
-                "video_id": video_id,
-                "index": s.index,
-                "start_ms": s.start_ms,
-                "end_ms": s.end_ms,
-                "start_frame": s.start_frame,
-                "end_frame_exclusive": s.end_frame_exclusive,
-                "boundary_type": s.boundary_type,
-                "confidence": s.confidence,
-            }
-            for s in converted
-        ]
+        # Adapter.predict() already ran inference + filtering +
+        # conversion + validation. Use stored _last_shots directly.
+        shots_list: list[dict] = adapter._last_shots
 
         if not shots_list:
             with get_sync_session() as session:
@@ -351,8 +306,8 @@ def detect_shots(
     producer = ArtifactProducer(
         model_name=model_name,
         model_version=adapter.version,
-        code_revision=getattr(adapter, "FIXED_COMMIT", None) if hasattr(adapter, "FIXED_COMMIT") else None,
-        weight_revision=None,
+        code_revision=getattr(adapter, "FIXED_COMMIT", "unknown"),
+        weight_revision="unknown",
     )
 
     shots_data = {

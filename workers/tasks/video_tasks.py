@@ -2,18 +2,17 @@
 Celery tasks for video preprocessing.
 
 Handles:
-  - Video normalization (FFmpeg re-encode + audio extraction)
-  - Metadata extraction (ffprobe)
-  - Artifact generation (normalized.mp4, audio.wav, metadata.json)
+  - Video normalization (FFmpeg re-encode via core.media)
+  - Metadata extraction (ffprobe via core.media)
+  - probe_before.json / probe_after.json preservation
+  - Normalization validation
+  - Artifact generation (normalized.mp4 + manifest)
 """
 
-import json
 import os
-import subprocess
 import time
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 from workers.celery_app import app
 from core.database.session_sync import get_sync_session
@@ -26,103 +25,11 @@ from core.database.models import ModelRun
 from core.artifacts.writer import ArtifactWriter
 from core.artifacts import ArtifactProducer
 from core.logging.context import set_task_context, clear_task_context
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _run_ffprobe(video_path: str) -> dict:
-    """Extract video metadata via ffprobe.
-
-    Returns a dict with: duration_ms, fps_num, fps_den, width, height,
-    audio_sample_rate, codec_name.
-    """
-    result = subprocess.run(
-        [
-            "ffprobe", "-v", "quiet",
-            "-print_format", "json",
-            "-show_format",
-            "-show_streams",
-            video_path,
-        ],
-        capture_output=True, text=True, timeout=30,
-    )
-    result.check_returncode()
-    info = json.loads(result.stdout)
-
-    meta: dict = {
-        "duration_ms": 0,
-        "fps_num": 24000,
-        "fps_den": 1001,
-        "width": 0,
-        "height": 0,
-        "audio_sample_rate": 0,
-        "codec_name": "unknown",
-    }
-
-    # Duration from format
-    fmt = info.get("format", {})
-    if "duration" in fmt:
-        meta["duration_ms"] = int(float(fmt["duration"]) * 1000)
-
-    for stream in info.get("streams", []):
-        codec_type = stream.get("codec_type", "")
-        if codec_type == "video":
-            meta["width"] = stream.get("width", 0)
-            meta["height"] = stream.get("height", 0)
-            meta["codec_name"] = stream.get("codec_name", "unknown")
-            fps_str = stream.get("r_frame_rate", "24000/1001")
-            num_str, den_str = fps_str.split("/")
-            meta["fps_num"] = int(num_str)
-            meta["fps_den"] = int(den_str)
-        elif codec_type == "audio":
-            meta["audio_sample_rate"] = int(stream.get("sample_rate", "0"))
-
-    return meta
-
-
-def _build_normalize_cmd(
-    input_path: str,
-    output_path: str,
-    width: int,
-    height: int,
-) -> list[str]:
-    """Build ffmpeg command for video normalization.
-
-    Re-encodes to H.264 + AAC, standard resolution, consistent FPS.
-    """
-    return [
-        "ffmpeg", "-y",
-        "-i", input_path,
-        "-c:v", "libx264",
-        "-preset", "fast",
-        "-crf", "23",
-        "-pix_fmt", "yuv420p",
-        "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
-        "-r", "24",
-        "-c:a", "aac",
-        "-b:a", "128k",
-        "-ar", "16000",
-        "-ac", "1",
-        "-movflags", "+faststart",
-        output_path,
-    ]
-
-
-def _build_audio_extract_cmd(
-    input_path: str,
-    output_path: str,
-) -> list[str]:
-    """Build ffmpeg command to extract 16kHz mono WAV audio."""
-    return [
-        "ffmpeg", "-y",
-        "-i", input_path,
-        "-vn",
-        "-acodec", "pcm_s16le",
-        "-ar", "16000",
-        "-ac", "1",
-        output_path,
-    ]
+from core.media.ffprobe import probe_video, run_ffprobe
+from core.media.ffmpeg import build_normalize_command, run_ffmpeg, get_ffmpeg_version
+from core.media.normalization import validate_normalization
+from core.media.schemas import NormalizationConfig
+from core.media.exceptions import FFprobeError, FFmpegError, NormalizationError
 
 
 # ---------------------------------------------------------------------------
@@ -131,14 +38,26 @@ def _build_audio_extract_cmd(
 
 @app.task(name="video.normalize", bind=True, max_retries=3)
 def normalize_video(self, task_id: str, video_id: str) -> dict:
-    """Normalize an uploaded video to a standard format.
+    """Normalize an uploaded video to the project standard format.
+
+    Per spec: FFmpeg标准化_OmniShotCut_Docker_Celery单模型闭环.md §10
+
+    Input: {task_id, video_id}
+    Output: {task_id, video_id, normalized_artifact_id,
+             normalized_artifact_uri, status}
 
     Steps:
-      1. ffprobe → extract metadata
-      2. ffmpeg → normalized.mp4 (H.264 24fps AAC)
-      3. ffmpeg → audio.wav (16kHz mono)
-      4. write metadata.json
-      5. save artifacts + update DB
+      1. Query Video / Task / Input Artifact from DB
+      2. Update Task stage → normalize_video, status → RUNNING
+      3. FFprobe input → save probe_before.json
+      4. FFmpeg normalize → normalized.mp4 (temp → atomic rename)
+      5. FFprobe output → save probe_after.json
+      6. Validate normalization result
+      7. Write Manifest
+      8. Compute SHA256
+      9. Create normalized_video Artifact in DB
+     10. Update Task stage + Video metadata
+     11. Return minimal result (no binary data)
     """
     set_task_context(task_id=task_id, video_id=video_id, model="ffmpeg")
 
@@ -148,43 +67,29 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
     with get_sync_session() as session:
         task_repo = TaskRepository(session)
         video_repo = VideoRepository(session)
-        artifact_repo = ArtifactRepository(session)
 
         # --- 1. Load video record ---
         video = video_repo.get(video_id)
         if video is None:
             clear_task_context()
-            return {
-                "task_id": task_id,
-                "video_id": video_id,
-                "status": "FAILED",
-                "error": {"code": "VIDEO_NOT_FOUND", "message": f"Video {video_id} not in DB"},
-            }
+            return _fail(task_id, video_id, "VIDEO_NOT_FOUND",
+                         f"Video {video_id} not in DB")
 
-        # Resolve source path
         source_uri = video.source_uri
         if not source_uri:
             clear_task_context()
-            return {
-                "task_id": task_id,
-                "video_id": video_id,
-                "status": "FAILED",
-                "error": {"code": "NO_SOURCE_URI", "message": "Video has no source_uri"},
-            }
+            return _fail(task_id, video_id, "NO_SOURCE_URI",
+                         "Video has no source_uri")
 
         source_path = _resolve_uri(source_uri, storage_root)
         if not os.path.exists(source_path):
             clear_task_context()
-            return {
-                "task_id": task_id,
-                "video_id": video_id,
-                "status": "FAILED",
-                "error": {"code": "SOURCE_NOT_FOUND", "message": f"File not found: {source_path}"},
-            }
+            return _fail(task_id, video_id, "SOURCE_NOT_FOUND",
+                         f"File not found: {source_path}")
 
         # --- 2. Update task → RUNNING ---
         task_repo.update_status(task_id, "RUNNING")
-        task_repo.update_progress(task_id, 5, stage="normalize_video")
+        task_repo.update_progress(task_id, 10, stage="normalize_video")
 
         # Create ModelRun record
         run_id = uuid.uuid4().hex[:16]
@@ -192,8 +97,8 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
             run_id=run_id,
             task_id=task_id,
             video_id=video_id,
-            model_name="ffmpeg",
-            model_version="system",
+            model_name="ffmpeg_normalizer",
+            model_version="1.0.0",
             schema_version="1.0",
             status="RUNNING",
             device="cpu",
@@ -202,122 +107,145 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
         session.add(model_run)
         session.commit()
 
-    # --- 3. ffprobe metadata (no DB needed) ---
-    try:
-        meta = _run_ffprobe(source_path)
-    except Exception as e:
-        with get_sync_session() as session:
-            task_repo = TaskRepository(session)
-            task_repo.set_error(task_id, "FFPROBE_FAILED", str(e))
-            session.commit()
-        clear_task_context()
-        return {
-            "task_id": task_id,
-            "video_id": video_id,
-            "status": "FAILED",
-            "error": {"code": "FFPROBE_FAILED", "message": str(e)},
-        }
-
-    # --- 4. Derive output paths ---
+    # --- 3. Derive output paths ---
     project_id = video.project_id if video else "default"
-    artifact_base = f"projects/{project_id}/videos/{video_id}/artifacts/ffmpeg/system"
+    norm_version = "1.0.0"
+    artifact_base = (
+        f"projects/{project_id}/videos/{video_id}/"
+        f"artifacts/video_normalization/{norm_version}"
+    )
+    norm_dir_abs = os.path.join(storage_root, artifact_base)
+    os.makedirs(norm_dir_abs, exist_ok=True)
 
     normalized_rel = f"{artifact_base}/normalized.mp4"
-    audio_rel = f"{artifact_base}/audio.wav"
-    metadata_rel = f"{artifact_base}/metadata.json"
-
     normalized_abs = os.path.join(storage_root, normalized_rel)
-    audio_abs = os.path.join(storage_root, audio_rel)
-    metadata_abs = os.path.join(storage_root, metadata_rel)
+    probe_before_rel = f"{artifact_base}/probe_before.json"
+    probe_before_abs = os.path.join(storage_root, probe_before_rel)
+    probe_after_rel = f"{artifact_base}/probe_after.json"
+    probe_after_abs = os.path.join(storage_root, probe_after_rel)
 
-    os.makedirs(os.path.dirname(normalized_abs), exist_ok=True)
+    # --- 4. FFprobe input → probe_before.json ---
+    with get_sync_session() as session:
+        task_repo = TaskRepository(session)
+        task_repo.update_progress(task_id, 15, stage="normalize_video")
+        session.commit()
 
-    # --- 5. ffmpeg normalize ---
-    width = meta["width"] or 1920
-    height = meta["height"] or 1080
+    try:
+        probe_before = probe_video(
+            source_path,
+            output_dir=norm_dir_abs,
+            label="probe_before",
+        )
+    except FFprobeError as e:
+        with get_sync_session() as session:
+            TaskRepository(session).set_error(task_id, "VIDEO_PROBE_FAILED", str(e))
+            session.commit()
+        clear_task_context()
+        return _fail(task_id, video_id, "VIDEO_PROBE_FAILED", str(e))
 
+    # Save probe_before as artifact file
+    _write_json_atomic(probe_before_abs, probe_before.to_dict())
+
+    # --- 5. FFmpeg normalize ---
     with get_sync_session() as session:
         task_repo = TaskRepository(session)
         task_repo.update_progress(task_id, 20, stage="normalize_video")
         session.commit()
 
-    try:
-        t0 = time.monotonic()
-        subprocess.run(
-            _build_normalize_cmd(source_path, normalized_abs, width, height),
-            capture_output=True, text=True, timeout=600,
-        ).check_returncode()
-        norm_runtime_ms = int((time.monotonic() - t0) * 1000)
-    except subprocess.CalledProcessError as e:
-        with get_sync_session() as session:
-            task_repo = TaskRepository(session)
-            task_repo.set_error(task_id, "FFMPEG_NORMALIZE_FAILED", e.stderr[:500])
-            session.commit()
-        clear_task_context()
-        return {
-            "task_id": task_id,
-            "video_id": video_id,
-            "status": "FAILED",
-            "error": {"code": "FFMPEG_NORMALIZE_FAILED", "message": e.stderr[:500]},
-        }
-
-    # --- 6. ffmpeg extract audio ---
-    with get_sync_session() as session:
-        task_repo = TaskRepository(session)
-        task_repo.update_progress(task_id, 50, stage="normalize_video")
-        session.commit()
-
-    try:
-        t0 = time.monotonic()
-        subprocess.run(
-            _build_audio_extract_cmd(source_path, audio_abs),
-            capture_output=True, text=True, timeout=300,
-        ).check_returncode()
-        audio_runtime_ms = int((time.monotonic() - t0) * 1000)
-    except subprocess.CalledProcessError as e:
-        with get_sync_session() as session:
-            task_repo = TaskRepository(session)
-            task_repo.set_error(task_id, "FFMPEG_AUDIO_FAILED", e.stderr[:500])
-            session.commit()
-        clear_task_context()
-        return {
-            "task_id": task_id,
-            "video_id": video_id,
-            "status": "FAILED",
-            "error": {"code": "FFMPEG_AUDIO_FAILED", "message": e.stderr[:500]},
-        }
-
-    # --- 7. Write metadata.json ---
-    metadata_content = {
-        "video_id": video_id,
-        "duration_ms": meta["duration_ms"],
-        "fps_num": meta["fps_num"],
-        "fps_den": meta["fps_den"],
-        "width": meta["width"],
-        "height": meta["height"],
-        "audio_sample_rate": meta["audio_sample_rate"],
-        "codec_name": meta["codec_name"],
-    }
-    os.makedirs(os.path.dirname(metadata_abs), exist_ok=True)
-    with open(metadata_abs, "w", encoding="utf-8") as f:
-        json.dump(metadata_content, f, indent=2)
-
-    # --- 8. Write artifacts + manifests ---
-    with get_sync_session() as session:
-        task_repo = TaskRepository(session)
-        task_repo.update_progress(task_id, 75, stage="normalize_video")
-        session.commit()
-
-    producer = ArtifactProducer(
-        model_name="ffmpeg",
-        model_version="system",
-        code_revision=None,
-        weight_revision=None,
+    config = NormalizationConfig()
+    cmd = build_normalize_command(
+        input_path=source_path,
+        output_path=normalized_abs,
+        probe=probe_before,
+        config=config,
     )
+    ffmpeg_version = get_ffmpeg_version()
 
-    # normalized.mp4
+    t0 = time.monotonic()
+    try:
+        run_ffmpeg(cmd, timeout=600, description="video normalization")
+    except FFmpegError as e:
+        _remove_if_exists(normalized_abs)
+        with get_sync_session() as session:
+            TaskRepository(session).set_error(
+                task_id, "VIDEO_NORMALIZATION_FAILED", str(e))
+            session.commit()
+        clear_task_context()
+        return _fail(task_id, video_id, "VIDEO_NORMALIZATION_FAILED", str(e))
+
+    norm_runtime_ms = int((time.monotonic() - t0) * 1000)
+
+    if not os.path.exists(normalized_abs):
+        with get_sync_session() as session:
+            TaskRepository(session).set_error(
+                task_id, "VIDEO_NORMALIZATION_FAILED",
+                "FFmpeg reported success but output file missing")
+            session.commit()
+        clear_task_context()
+        return _fail(task_id, video_id, "VIDEO_NORMALIZATION_FAILED",
+                     "Output file not found after ffmpeg")
+
+    # --- 6. FFprobe output → probe_after.json ---
+    with get_sync_session() as session:
+        task_repo = TaskRepository(session)
+        task_repo.update_progress(task_id, 30, stage="normalize_video")
+        session.commit()
+
+    try:
+        probe_after = probe_video(
+            normalized_abs,
+            output_dir=norm_dir_abs,
+            label="probe_after",
+        )
+    except FFprobeError as e:
+        with get_sync_session() as session:
+            TaskRepository(session).set_error(task_id, "VIDEO_PROBE_FAILED", str(e))
+            session.commit()
+        clear_task_context()
+        return _fail(task_id, video_id, "VIDEO_PROBE_FAILED", str(e))
+
+    _write_json_atomic(probe_after_abs, probe_after.to_dict())
+
+    # --- 7. Validate normalization ---
+    validation_errors = validate_normalization(
+        probe_before=probe_before,
+        probe_after=probe_after,
+        output_path=normalized_abs,
+        config=config,
+    )
+    if validation_errors:
+        with get_sync_session() as session:
+            TaskRepository(session).set_error(
+                task_id, "NORMALIZED_VIDEO_VALIDATION_FAILED",
+                "; ".join(validation_errors))
+            session.commit()
+        clear_task_context()
+        return _fail(task_id, video_id,
+                     "NORMALIZED_VIDEO_VALIDATION_FAILED",
+                     "; ".join(validation_errors))
+
+    # --- 8. Compute SHA256 & write manifests ---
+    with get_sync_session() as session:
+        task_repo = TaskRepository(session)
+        task_repo.update_progress(task_id, 35, stage="normalize_video")
+        session.commit()
+
+    import hashlib
     with open(normalized_abs, "rb") as f:
         norm_bytes = f.read()
+    norm_sha256 = hashlib.sha256(norm_bytes).hexdigest()
+    norm_size = len(norm_bytes)
+
+    input_sha256 = probe_before.raw_json is not None and _sha256_file(source_path) or ""
+
+    producer = ArtifactProducer(
+        model_name="ffmpeg_normalizer",
+        model_version=norm_version,
+        code_revision="unknown",
+        weight_revision="unknown",
+    )
+
+    # Write normalized.mp4 artifact
     norm_manifest = writer.write_bytes_artifact(
         relative_path=normalized_rel,
         content=norm_bytes,
@@ -329,35 +257,34 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
         schema_version="1.0",
     )
     norm_uri = f"storage://{normalized_rel}"
-    norm_sha256 = norm_manifest.output.sha256
 
-    # audio.wav
-    with open(audio_abs, "rb") as f:
-        audio_bytes = f.read()
+    # Write probe_before artifact
+    with open(probe_before_abs, "rb") as f:
+        probe_before_bytes = f.read()
     writer.write_bytes_artifact(
-        relative_path=audio_rel,
-        content=audio_bytes,
-        artifact_type="audio_wav",
-        artifact_id=f"{run_id}_audio",
+        relative_path=probe_before_rel,
+        content=probe_before_bytes,
+        artifact_type="probe_before",
+        artifact_id=f"{run_id}_probe_before",
         video_id=video_id,
         run_id=run_id,
         producer=producer,
         schema_version="1.0",
     )
-    audio_uri = f"storage://{audio_rel}"
 
-    # metadata.json
-    writer.write_json_artifact(
-        relative_path=metadata_rel,
-        data=metadata_content,
-        artifact_type="video_metadata",
-        artifact_id=f"{run_id}_meta",
+    # Write probe_after artifact
+    with open(probe_after_abs, "rb") as f:
+        probe_after_bytes = f.read()
+    writer.write_bytes_artifact(
+        relative_path=probe_after_rel,
+        content=probe_after_bytes,
+        artifact_type="probe_after",
+        artifact_id=f"{run_id}_probe_after",
         video_id=video_id,
         run_id=run_id,
         producer=producer,
         schema_version="1.0",
     )
-    metadata_uri = f"storage://{metadata_rel}"
 
     # --- 9. Save artifact DB records + update video + finalize ---
     with get_sync_session() as session:
@@ -377,20 +304,20 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
             sha256=norm_sha256,
         )
         artifact_repo.create(
-            artifact_id=f"{run_id}_audio",
+            artifact_id=f"{run_id}_probe_before",
             video_id=video_id,
             run_id=run_id,
-            artifact_type="audio_wav",
-            uri=audio_uri,
-            format="wav",
+            artifact_type="probe_before",
+            uri=f"storage://{probe_before_rel}",
+            format="json",
             schema_version="1.0",
         )
         artifact_repo.create(
-            artifact_id=f"{run_id}_meta",
+            artifact_id=f"{run_id}_probe_after",
             video_id=video_id,
             run_id=run_id,
-            artifact_type="video_metadata",
-            uri=metadata_uri,
+            artifact_type="probe_after",
+            uri=f"storage://{probe_after_rel}",
             format="json",
             schema_version="1.0",
         )
@@ -398,26 +325,25 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
         # Update video metadata
         video_repo.update_metadata(
             video_id,
-            duration_ms=meta["duration_ms"],
-            fps_num=meta["fps_num"],
-            fps_den=meta["fps_den"],
-            width=meta["width"],
-            height=meta["height"],
-            audio_sample_rate=meta["audio_sample_rate"],
+            duration_ms=probe_after.duration_ms,
+            fps_num=probe_after.fps_num,
+            fps_den=probe_after.fps_den,
+            width=probe_after.width,
+            height=probe_after.height,
+            audio_sample_rate=probe_after.audio_sample_rate,
             normalized_uri=norm_uri,
-            audio_uri=audio_uri,
         )
 
         # Update ModelRun
         mr = session.get(ModelRun, run_id)
         if mr:
             mr.status = "SUCCEEDED"
-            mr.runtime_ms = norm_runtime_ms + audio_runtime_ms
+            mr.runtime_ms = norm_runtime_ms
             mr.finished_at = datetime.now(timezone.utc)
 
         # Mark task as SUCCEEDED
         task_repo.update_status(task_id, "SUCCEEDED")
-        task_repo.update_progress(task_id, 100, stage="normalize_video")
+        task_repo.update_progress(task_id, 40, stage="normalize_video")
         session.commit()
 
     clear_task_context()
@@ -426,15 +352,23 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
         "task_id": task_id,
         "video_id": video_id,
         "run_id": run_id,
+        "normalized_artifact_id": f"{run_id}_norm",
+        "normalized_artifact_uri": norm_uri,
         "status": "SUCCEEDED",
         "stage": "normalize_video",
-        "artifacts": {
-            "normalized_video": norm_uri,
-            "audio_wav": audio_uri,
-            "metadata": metadata_uri,
+        "metadata": {
+            "duration_ms": probe_after.duration_ms,
+            "fps_num": probe_after.fps_num,
+            "fps_den": probe_after.fps_den,
+            "width": probe_after.width,
+            "height": probe_after.height,
+            "audio_sample_rate": probe_after.audio_sample_rate,
+            "video_codec": probe_after.video_codec,
+            "pixel_format": probe_after.pixel_format,
+            "validation_passed": True,
+            "ffmpeg_version": ffmpeg_version,
+            "runtime_ms": norm_runtime_ms,
         },
-        "metadata": metadata_content,
-        "runtime_ms": norm_runtime_ms + audio_runtime_ms,
     }
 
 
@@ -448,3 +382,40 @@ def _resolve_uri(uri: str, storage_root: str) -> str:
     if uri.startswith(prefix):
         return os.path.join(storage_root, uri[len(prefix):])
     return uri
+
+
+def _fail(task_id: str, video_id: str, code: str, message: str) -> dict:
+    """Build a standardised failure result."""
+    return {
+        "task_id": task_id,
+        "video_id": video_id,
+        "status": "FAILED",
+        "error": {"code": code, "message": message},
+    }
+
+
+def _write_json_atomic(path: str, data: dict) -> None:
+    """Write JSON to a temp file then atomic rename."""
+    import json
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+    os.replace(tmp, path)
+
+
+def _remove_if_exists(path: str) -> None:
+    """Remove a file if it exists, silently."""
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _sha256_file(path: str) -> str:
+    """Compute SHA-256 hex digest of a file."""
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
