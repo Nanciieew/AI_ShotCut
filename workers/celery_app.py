@@ -32,6 +32,7 @@ def create_celery_app() -> Celery:
             "workers.tasks.scene_tasks",
             "workers.tasks.final_tasks",
             "workers.tasks.maintenance_tasks",
+            "workers.tasks.keyframe_tasks",
         ],
     )
 
@@ -54,15 +55,15 @@ def create_celery_app() -> Celery:
         worker_max_tasks_per_child=50,
     )
 
-    # --- Task routing: dedicated queues ---
+    # --- Task routing: dedicated queues (matched by task name prefix) ---
     app.conf.task_routes = {
-        "workers.tasks.video_tasks.*": {"queue": "video"},
-        "workers.tasks.shot_tasks.*": {"queue": "shot"},
-        "workers.tasks.subtitle_tasks.*": {"queue": "subtitle"},
-        "workers.tasks.feature_tasks.*": {"queue": "feature"},
-        "workers.tasks.scene_tasks.*": {"queue": "scene"},
-        "workers.tasks.final_tasks.*": {"queue": "final"},
-        "workers.tasks.maintenance_tasks.*": {"queue": "maintenance"},
+        "video.*": {"queue": "video"},
+        "shot.*": {"queue": "shot"},
+        "subtitle.*": {"queue": "subtitle"},
+        "feature.*": {"queue": "feature"},
+        "scene.*": {"queue": "scene"},
+        "final.*": {"queue": "final"},
+        "maintenance.*": {"queue": "maintenance"},
     }
 
     # --- Task default queue ---

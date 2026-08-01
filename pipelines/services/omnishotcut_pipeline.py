@@ -62,6 +62,11 @@ class PipelineResult:
     normalized_sha256: str = ""
     shots_sha256: str = ""
 
+    # Keyframe extraction (optional)
+    keyframes_artifact_uri: str = ""
+    keyframes_artifact_id: str = ""
+    keyframe_image_count: int = 0
+
 
 # ---------------------------------------------------------------------------
 # Pipeline Service
@@ -75,6 +80,7 @@ def run_omnishotcut_pipeline(
     source_artifact_id: str | None = None,
     output_root: Path,
     mode: str = "clean_shot",
+    extract_keyframes: bool = False,
 ) -> PipelineResult:
     """Run the complete OmniShotCut pipeline locally.
 
@@ -89,6 +95,7 @@ def run_omnishotcut_pipeline(
       8. Run inference (reading normalized.mp4 only)
       9. Convert + validate shots
      10. Write shots artifacts + manifest
+     10.5 [if extract_keyframes] Extract keyframes via PyAV
      11. Return PipelineResult
 
     Args:
@@ -97,6 +104,8 @@ def run_omnishotcut_pipeline(
         source_artifact_id: Optional upstream artifact ID for lineage.
         output_root: Root directory for artifacts.
         mode: OmniShotCut inference mode (default: "clean_shot").
+        extract_keyframes: If True, extract 25%, 50%, 75% keyframes
+            per shot after shot detection (default: False).
 
     Returns:
         PipelineResult — small, no binary data.
@@ -169,7 +178,7 @@ def run_omnishotcut_pipeline(
     result.ffmpeg_version = get_ffmpeg_version()
 
     try:
-        run_ffmpeg(cmd, timeout=600, description="video normalization")
+        run_ffmpeg(cmd, timeout=3600, description="video normalization")
     except FFmpegError as e:
         result.error_code = "VIDEO_NORMALIZATION_FAILED"
         result.error_message = str(e)
@@ -204,7 +213,7 @@ def run_omnishotcut_pipeline(
 
     result.normalized_sha256 = _sha256_file(normalized_path)
 
-    # --- 6. Write normalized_video artifact ---
+    # --- 6. Write normalized_video artifact (manifest only, video on disk) ---
     norm_artifact_id = _new_id()
     norm_rel = str(norm_dir.relative_to(output_root))
     producer_norm = ArtifactProducer(
@@ -212,12 +221,17 @@ def run_omnishotcut_pipeline(
         model_version=norm_version,
     )
 
-    with open(normalized_path, "rb") as f:
-        norm_bytes = f.read()
-
-    writer.write_bytes_artifact(
-        relative_path=f"{norm_rel}/normalized.mp4",
-        content=norm_bytes,
+    # Video already on disk from FFmpeg step — just write its manifest
+    norm_size = normalized_path.stat().st_size
+    writer.write_json_artifact(
+        relative_path=f"{norm_rel}/normalized.mp4.meta.json",
+        data={
+            "file": "normalized.mp4",
+            "artifact_id": norm_artifact_id,
+            "artifact_type": "normalized_video",
+            "sha256": result.normalized_sha256,
+            "size_bytes": norm_size,
+        },
         artifact_type="normalized_video",
         artifact_id=norm_artifact_id,
         video_id=video_id,
@@ -384,6 +398,53 @@ def run_omnishotcut_pipeline(
     result.shots_artifact_id = shot_artifact_id
     result.shots_artifact_uri = str(shot_dir / "shots.json")
     result.shots_sha256 = shot_manifest.output.sha256
+
+    # --- 10.5. Extract keyframes (optional) ---
+    if extract_keyframes:
+        print("  [Keyframes] Extracting 25%/50%/75% keyframes per shot ...")
+        try:
+            from pipelines.services.keyframe_service import run_keyframe_extraction
+            import os as _os
+
+            storage_root = str(output_root)
+            normalized_path = _os.path.join(
+                storage_root,
+                "projects", project_id, "videos", video_id,
+                "artifacts", "video_normalization", "1.0.0", "normalized.mp4",
+            )
+
+            keyframe_result = run_keyframe_extraction(
+                video_path=normalized_path,
+                shots_data=shots_data,
+                fps_num=probe_after.fps_num,
+                fps_den=probe_after.fps_den,
+                frame_count=probe_after.frame_count,
+                video_width=probe_after.width,
+                video_height=probe_after.height,
+                shots_artifact_id=result.shots_artifact_id,
+                normalized_video_artifact_id=result.normalized_artifact_id,
+                video_id=video_id,
+                run_id=_new_id(),
+                output_root=storage_root,
+            )
+
+            if keyframe_result.status == "SUCCEEDED":
+                result.keyframes_artifact_id = keyframe_result.summary_artifact_id
+                result.keyframes_artifact_uri = keyframe_result.summary_artifact_uri
+                result.keyframe_image_count = keyframe_result.unique_image_count
+                shot_count = keyframe_result.shot_count
+                print(f"  [Keyframes] Done: {keyframe_result.unique_image_count} "
+                      f"images for {shot_count} shots "
+                      f"({keyframe_result.runtime_ms}ms)")
+            else:
+                result.warnings.append(
+                    f"Keyframe extraction failed: "
+                    f"[{keyframe_result.error_code}] {keyframe_result.error_message}"
+                )
+                print(f"  [Keyframes] FAILED: {keyframe_result.error_message}")
+        except Exception as e:
+            result.warnings.append(f"Keyframe extraction error: {e}")
+            print(f"  [Keyframes] FAILED: {e}")
 
     # --- 11. Finalize ---
     result.status = "SUCCEEDED"

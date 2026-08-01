@@ -2,12 +2,13 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from core.artifacts.manifest import (
-    ArtifactInputRef,
     ArtifactManifest,
+    ArtifactInputRef,
     ArtifactOutputRef,
     ArtifactProducer,
 )
@@ -33,8 +34,8 @@ class ArtifactWriter:
         video_id: str,
         run_id: str,
         producer: ArtifactProducer,
-        input_ref: ArtifactInputRef | None = None,
-        parameters: dict[str, Any] | None = None,
+        input_ref: Optional[ArtifactInputRef] = None,
+        parameters: Optional[dict[str, Any]] = None,
         schema_version: str = "1.0",
     ) -> ArtifactManifest:
         """Write a JSON artifact + its manifest, atomically.
@@ -65,8 +66,8 @@ class ArtifactWriter:
         video_id: str,
         run_id: str,
         producer: ArtifactProducer,
-        input_ref: ArtifactInputRef | None = None,
-        parameters: dict[str, Any] | None = None,
+        input_ref: Optional[ArtifactInputRef] = None,
+        parameters: Optional[dict[str, Any]] = None,
         schema_version: str = "1.0",
     ) -> ArtifactManifest:
         """Write a binary artifact + its manifest, atomically."""
@@ -96,8 +97,8 @@ class ArtifactWriter:
         video_id: str,
         run_id: str,
         producer: ArtifactProducer,
-        input_ref: ArtifactInputRef | None,
-        parameters: dict[str, Any] | None,
+        input_ref: Optional[ArtifactInputRef],
+        parameters: Optional[dict[str, Any]],
         schema_version: str,
     ) -> ArtifactManifest:
         full_path = self._resolve(relative_path)
@@ -147,24 +148,26 @@ class ArtifactWriter:
         return resolved
 
     @staticmethod
-    def _count_records(content: bytes, artifact_type: str) -> int | None:
-        """Try to count records for JSON artifacts."""
+    def _count_records(content: bytes, artifact_type: str) -> Optional[int]:
+        """Try to count records for JSON artifacts only."""
+        # Only text-based artifacts; skip binary (mp4, wav, npy, npz, etc.)
+        _TEXT_TYPES = {"shots", "subtitle_segments",
+                       "scene_boundaries", "scores", "boundaries",
+                       "video_metadata", "probe_before", "probe_after",
+                       "normalized_video", "scene_evidence",
+                       "shot_keyframes"}
+        if artifact_type not in _TEXT_TYPES:
+            return None
         try:
             data = json.loads(content)
-            # Common array-key patterns
             for key in (
-                "shots",
-                "subtitle_segments",
-                "subtitle_segments",
-                "scenes",
-                "scores",
-                "boundaries",
-                "evidence",
+                "shots", "subtitle_segments", "scenes", "scores",
+                "boundaries", "evidence", "screenshots", "keyframes",
             ):
                 if key in data and isinstance(data[key], list):
                     return len(data[key])
             if isinstance(data, list):
                 return len(data)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (json.JSONDecodeError, UnicodeDecodeError, MemoryError):
             pass
         return None

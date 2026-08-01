@@ -11,17 +11,19 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from core.artifacts import ArtifactProducer
-from core.artifacts.writer import ArtifactWriter
-from core.database.models import ModelRun, Shot
+from workers.celery_app import app
+from core.database.session_sync import get_sync_session
 from core.database.repositories import (
-    ArtifactRepository,
     TaskRepository,
     VideoRepository,
+    ArtifactRepository,
 )
-from core.database.session_sync import get_sync_session
-from core.logging.context import clear_task_context, set_task_context
-from workers.celery_app import app
+from core.database.models import ModelRun, Shot
+from core.artifacts.writer import ArtifactWriter
+from core.artifacts import ArtifactProducer
+from core.logging.context import set_task_context, clear_task_context
+from core.media.exceptions import NonRetryableTaskError
+
 
 # ---------------------------------------------------------------------------
 # Adapter registry — maps model_name → Adapter class
@@ -31,7 +33,6 @@ _ADAPTER_REGISTRY: dict[str, type] = {}
 
 try:
     from models.omnishotcut.adapter import OmniShotCutAdapter
-
     _ADAPTER_REGISTRY["omnishotcut"] = OmniShotCutAdapter
 except ImportError:
     pass
@@ -52,19 +53,17 @@ def _get_adapter_class(model_name: str):
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _resolve_uri(uri: str, storage_root: str) -> str:
     """Convert storage:// URI to local absolute path."""
     prefix = "storage://"
     if uri.startswith(prefix):
-        return os.path.join(storage_root, uri[len(prefix) :])
+        return os.path.join(storage_root, uri[len(prefix):])
     return uri
 
 
 # ---------------------------------------------------------------------------
 # Task
 # ---------------------------------------------------------------------------
-
 
 @app.task(name="shot.detect", bind=True, max_retries=2)
 def detect_shots(
@@ -98,12 +97,7 @@ def detect_shots(
         adapter_cls = _get_adapter_class(model_name)
     except ValueError as e:
         clear_task_context()
-        return {
-            "task_id": task_id,
-            "video_id": video_id,
-            "status": "FAILED",
-            "error": {"code": "UNKNOWN_MODEL", "message": str(e)},
-        }
+        raise NonRetryableTaskError(f"[UNKNOWN_MODEL] {e}")
 
     # --- 2. Load video record ---
     with get_sync_session() as session:
@@ -113,38 +107,18 @@ def detect_shots(
         video = video_repo.get(video_id)
         if video is None:
             clear_task_context()
-            return {
-                "task_id": task_id,
-                "video_id": video_id,
-                "status": "FAILED",
-                "error": {"code": "VIDEO_NOT_FOUND", "message": f"Video {video_id} not in DB"},
-            }
+            raise NonRetryableTaskError(f"[VIDEO_NOT_FOUND] Video {video_id} not in DB")
 
         normalized_uri = video.normalized_uri
         if not normalized_uri:
             clear_task_context()
-            return {
-                "task_id": task_id,
-                "video_id": video_id,
-                "status": "FAILED",
-                "error": {
-                    "code": "NOT_NORMALIZED",
-                    "message": "Video has no normalized_uri. Run normalize_video first.",
-                },
-            }
+            raise NonRetryableTaskError(
+                "[NOT_NORMALIZED] Video has no normalized_uri. Run normalize_video first.")
 
         video_path = _resolve_uri(normalized_uri, storage_root)
         if not os.path.exists(video_path):
             clear_task_context()
-            return {
-                "task_id": task_id,
-                "video_id": video_id,
-                "status": "FAILED",
-                "error": {
-                    "code": "FILE_NOT_FOUND",
-                    "message": f"Normalized video missing: {video_path}",
-                },
-            }
+            raise NonRetryableTaskError(f"[FILE_NOT_FOUND] Normalized video missing: {video_path}")
 
         # --- 3. Update task → RUNNING ---
         task_repo.update_status(task_id, "RUNNING")
@@ -180,12 +154,7 @@ def detect_shots(
                 mr.finished_at = datetime.now(timezone.utc)
             session.commit()
         clear_task_context()
-        return {
-            "task_id": task_id,
-            "video_id": video_id,
-            "status": "FAILED",
-            "error": {"code": "MODEL_LOAD_FAILED", "message": str(e)},
-        }
+        raise NonRetryableTaskError(f"[MODEL_LOAD_FAILED] {e}")
 
     try:
         with get_sync_session() as session:
@@ -201,11 +170,7 @@ def detect_shots(
             "task_id": task_id,
             "video_id": video_id,
             "model": {"name": model_name, "version": adapter.version},
-            "input": {
-                "video_uri": f"storage://{normalized_uri[len('storage://') :]}"
-                if normalized_uri.startswith("storage://")
-                else normalized_uri
-            },
+            "input": {"video_uri": f"storage://{normalized_uri[len('storage://'):]}" if normalized_uri.startswith("storage://") else normalized_uri},
             "parameters": {"mode": "clean_shot"},
         }
 
@@ -228,7 +193,9 @@ def detect_shots(
                     mr.finished_at = datetime.now(timezone.utc)
                 session.commit()
             clear_task_context()
-            return output
+            raise NonRetryableTaskError(
+                f"[{error_info.get('code', 'INFERENCE_FAILED')}] "
+                + error_info.get('message', 'Unknown inference error'))
 
     except Exception as e:
         with get_sync_session() as session:
@@ -240,12 +207,7 @@ def detect_shots(
                 mr.finished_at = datetime.now(timezone.utc)
             session.commit()
         clear_task_context()
-        return {
-            "task_id": task_id,
-            "video_id": video_id,
-            "status": "FAILED",
-            "error": {"code": "MODEL_INFERENCE_FAILED", "message": str(e)},
-        }
+        raise NonRetryableTaskError(f"[MODEL_INFERENCE_FAILED] {e}")
 
     # --- 5. Extract shot data from adapter ---
     # adapter.predict() already completed: raw inference →
@@ -278,12 +240,7 @@ def detect_shots(
                     mr.finished_at = datetime.now(timezone.utc)
                 session.commit()
             clear_task_context()
-            return {
-                "task_id": task_id,
-                "video_id": video_id,
-                "status": "FAILED",
-                "error": {"code": "NO_SHOTS_DETECTED", "message": "Model returned zero shots"},
-            }
+            raise NonRetryableTaskError("[NO_SHOTS_DETECTED] Model returned zero shots")
 
     except Exception as e:
         with get_sync_session() as session:
@@ -295,12 +252,7 @@ def detect_shots(
                 mr.finished_at = datetime.now(timezone.utc)
             session.commit()
         clear_task_context()
-        return {
-            "task_id": task_id,
-            "video_id": video_id,
-            "status": "FAILED",
-            "error": {"code": "SHOT_CONVERSION_FAILED", "message": str(e)},
-        }
+        raise NonRetryableTaskError(f"[SHOT_CONVERSION_FAILED] {e}")
 
     # --- 6. Save shots.json artifact ---
     with get_sync_session() as session:
@@ -309,9 +261,7 @@ def detect_shots(
         session.commit()
 
     project_id = video.project_id if video else "default"
-    artifact_base = (
-        f"projects/{project_id}/videos/{video_id}/artifacts/{model_name}/{adapter.version}"
-    )
+    artifact_base = f"projects/{project_id}/videos/{video_id}/artifacts/{model_name}/{adapter.version}"
     shots_rel = f"{artifact_base}/shots.json"
 
     producer = ArtifactProducer(
@@ -379,9 +329,7 @@ def detect_shots(
             mr.runtime_ms = runtime_ms
             mr.finished_at = datetime.now(timezone.utc)
 
-        # Mark task SUCCEEDED
-        task_repo.update_status(task_id, "SUCCEEDED")
-        task_repo.update_progress(task_id, 100, stage="detect_shots")
+        task_repo.update_progress(task_id, 70, stage="detect_shots")
         session.commit()
 
     clear_task_context()

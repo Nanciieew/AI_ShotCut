@@ -1,16 +1,18 @@
 """Analysis orchestration service — submits Celery chains for video analysis.
 
 Handles:
-  - Creating Project/Video/Task/Artifact records
-  - Submitting Celery task chains
-  - Validating preconditions (e.g., normalized video must exist before shot detection)
+  - Creating Project/Video/Task records
+  - Delegating to core.orchestration for Celery chain construction
+  - Validating preconditions
+
+Per CLAUDE.md §2.1, this service MUST NOT directly define task execution order.
+It delegates to core.orchestration canvas builders instead.
 """
 
 import uuid
+from typing import Optional
 
-from celery import chain
-
-from workers.celery_app import get_celery_app
+from core.orchestration import build_omnishotcut_canvas
 
 
 def _new_id() -> str:
@@ -20,18 +22,33 @@ def _new_id() -> str:
 async def submit_full_pipeline(
     db,
     video_path: str,
-    project_id: str | None = None,
+    project_id: Optional[str] = None,
+    extract_keyframes: bool = False,
 ) -> dict:
-    """Create DB records and submit the normalize_video → detect_shots chain.
+    """Create DB records and submit the analysis pipeline chain.
 
-    Returns:
+    Parameters
+    ----------
+    db : AsyncSession
+        Database session (async).
+    video_path : str
+        Path to the source video file.
+    project_id : Optional[str]
+        Project identifier (default: "default").
+    extract_keyframes : bool
+        When True, include the keyframe extraction step after shot detection.
+        Default False.
+
+    Returns
+    -------
+    dict
         {task_id, video_id, project_id, status, stage, message}
     """
+    from core.database.session_sync import get_sync_session
     from core.database.repositories import (
         TaskRepository,
         VideoRepository,
     )
-    from core.database.session_sync import get_sync_session
 
     vid = _new_id()
     task_id = _new_id()
@@ -46,33 +63,28 @@ async def submit_full_pipeline(
 
         # Create video record + original artifact
         source_uri = f"storage://projects/{proj_id}/videos/{vid}/source/{video_path}"
-        video_repo.create(
+        video = video_repo.create(
             video_id=vid,
             project_id=proj_id,
             source_uri=source_uri,
         )
 
         # Create task
-        task_repo.create(
+        task = task_repo.create(
             task_id=task_id,
             video_id=vid,
             task_type="omnishotcut_pipeline",
         )
         session.commit()
 
-    # Submit Celery chain: normalize_video → detect_shots
+    # Build and submit Celery chain via orchestration layer
     try:
-        celery_app = get_celery_app()
-        result = chain(
-            celery_app.signature(
-                "video.normalize",
-                args=(task_id, vid),
-            ),
-            celery_app.signature(
-                "shot.detect",
-                args=(task_id, vid, "omnishotcut"),
-            ),
-        ).apply_async()
+        canvas = build_omnishotcut_canvas(
+            task_id=task_id,
+            video_id=vid,
+            extract_keyframes=extract_keyframes,
+        )
+        result = canvas.apply_async()
         celery_task_id = result.id
 
         # Update celery_task_id
@@ -94,6 +106,11 @@ async def submit_full_pipeline(
             "error": {"code": "CELERY_DISPATCH_FAILED", "message": str(e)},
         }
 
+    steps_msg = "normalize_video → detect_shots"
+    if extract_keyframes:
+        steps_msg += " → extract_keyframes"
+    steps_msg += " → pipeline_complete"
+
     return {
         "task_id": task_id,
         "video_id": vid,
@@ -102,7 +119,7 @@ async def submit_full_pipeline(
         "stage": "normalize_video",
         "progress": 0,
         "celery_task_id": celery_task_id,
-        "message": "Pipeline submitted: normalize_video → detect_shots",
+        "message": f"Pipeline submitted: {steps_msg}",
     }
 
 
@@ -142,7 +159,7 @@ async def get_video_results(video_id: str, db) -> dict:
     """Get all results + artifacts for a video."""
     from sqlalchemy import select
 
-    from core.database.models import Artifact, Shot, Task, Video
+    from core.database.models import Video, Task, Artifact, Shot
 
     # Video
     result = await db.execute(select(Video).where(Video.video_id == video_id))
@@ -151,11 +168,15 @@ async def get_video_results(video_id: str, db) -> dict:
         return {"video_id": video_id, "status": "NOT_FOUND"}
 
     # Shots
-    result = await db.execute(select(Shot).where(Shot.video_id == video_id).order_by(Shot.index))
+    result = await db.execute(
+        select(Shot).where(Shot.video_id == video_id).order_by(Shot.index)
+    )
     shots = result.scalars().all()
 
     # Artifacts
-    result = await db.execute(select(Artifact).where(Artifact.video_id == video_id))
+    result = await db.execute(
+        select(Artifact).where(Artifact.video_id == video_id)
+    )
     artifacts = result.scalars().all()
 
     # Latest task
@@ -179,9 +200,7 @@ async def get_video_results(video_id: str, db) -> dict:
             "status": task.status if task else None,
             "stage": task.stage if task else None,
             "progress": task.progress if task else 0,
-        }
-        if task
-        else None,
+        } if task else None,
         "shots": [
             {
                 "shot_id": s.shot_id,
