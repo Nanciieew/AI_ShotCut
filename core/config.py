@@ -115,11 +115,14 @@ class Settings(BaseSettings):
         description="Keyframe image format: jpeg or png.",
     )
     keyframe_quality: int = Field(
-        default=85, ge=1, le=100,
+        default=85,
+        ge=1,
+        le=100,
         description="JPEG quality (1-100). Ignored for PNG.",
     )
     keyframe_max_long_side: int = Field(
-        default=672, ge=64,
+        default=672,
+        ge=64,
         description="Maximum long-side pixel count. 672 is divisible by DINOv2 patch size 14.",
     )
 

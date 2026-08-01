@@ -14,30 +14,31 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from workers.celery_app import app
-from core.database.session_sync import get_sync_session
+from core.artifacts import ArtifactProducer
+from core.artifacts.writer import ArtifactWriter
+from core.database.models import ModelRun
 from core.database.repositories import (
+    ArtifactRepository,
     TaskRepository,
     VideoRepository,
-    ArtifactRepository,
 )
-from core.database.models import ModelRun
-from core.artifacts.writer import ArtifactWriter
-from core.artifacts import ArtifactProducer
-from core.logging.context import set_task_context, clear_task_context
-from core.media.ffprobe import probe_video, run_ffprobe
-from core.media.ffmpeg import build_normalize_command, run_ffmpeg, get_ffmpeg_version
-from core.media.normalization import validate_normalization
-from core.media.schemas import NormalizationConfig
+from core.database.session_sync import get_sync_session
+from core.logging.context import clear_task_context, set_task_context
 from core.media.exceptions import (
-    FFprobeError, FFmpegError, NormalizationError,
+    FFmpegError,
+    FFprobeError,
     NonRetryableTaskError,
 )
-
+from core.media.ffmpeg import build_normalize_command, get_ffmpeg_version, run_ffmpeg
+from core.media.ffprobe import probe_video
+from core.media.normalization import validate_normalization
+from core.media.schemas import NormalizationConfig
+from workers.celery_app import app
 
 # ---------------------------------------------------------------------------
 # Task
 # ---------------------------------------------------------------------------
+
 
 @app.task(name="video.normalize", bind=True, max_retries=3)
 def normalize_video(self, task_id: str, video_id: str) -> dict:
@@ -80,7 +81,7 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
         source_uri = video.source_uri
         if not source_uri:
             clear_task_context()
-            raise NonRetryableTaskError(f"[NO_SOURCE_URI] Video has no source_uri")
+            raise NonRetryableTaskError("[NO_SOURCE_URI] Video has no source_uri")
 
         source_path = _resolve_uri(source_uri, storage_root)
         if not os.path.exists(source_path):
@@ -111,8 +112,7 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
     project_id = video.project_id if video else "default"
     norm_version = "1.0.0"
     artifact_base = (
-        f"projects/{project_id}/videos/{video_id}/"
-        f"artifacts/video_normalization/{norm_version}"
+        f"projects/{project_id}/videos/{video_id}/artifacts/video_normalization/{norm_version}"
     )
     norm_dir_abs = os.path.join(storage_root, artifact_base)
     os.makedirs(norm_dir_abs, exist_ok=True)
@@ -167,8 +167,7 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
     except FFmpegError as e:
         _remove_if_exists(normalized_abs)
         with get_sync_session() as session:
-            TaskRepository(session).set_error(
-                task_id, "VIDEO_NORMALIZATION_FAILED", str(e))
+            TaskRepository(session).set_error(task_id, "VIDEO_NORMALIZATION_FAILED", str(e))
             session.commit()
         clear_task_context()
         raise NonRetryableTaskError(f"[VIDEO_NORMALIZATION_FAILED] {e}")
@@ -178,12 +177,15 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
     if not os.path.exists(normalized_abs):
         with get_sync_session() as session:
             TaskRepository(session).set_error(
-                task_id, "VIDEO_NORMALIZATION_FAILED",
-                "FFmpeg reported success but output file missing")
+                task_id,
+                "VIDEO_NORMALIZATION_FAILED",
+                "FFmpeg reported success but output file missing",
+            )
             session.commit()
         clear_task_context()
         raise NonRetryableTaskError(
-            "[VIDEO_NORMALIZATION_FAILED] Output file not found after ffmpeg")
+            "[VIDEO_NORMALIZATION_FAILED] Output file not found after ffmpeg"
+        )
 
     # --- 6. FFprobe output → probe_after.json ---
     with get_sync_session() as session:
@@ -216,13 +218,13 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
     if validation_errors:
         with get_sync_session() as session:
             TaskRepository(session).set_error(
-                task_id, "NORMALIZED_VIDEO_VALIDATION_FAILED",
-                "; ".join(validation_errors))
+                task_id, "NORMALIZED_VIDEO_VALIDATION_FAILED", "; ".join(validation_errors)
+            )
             session.commit()
         clear_task_context()
         raise NonRetryableTaskError(
-            "[NORMALIZED_VIDEO_VALIDATION_FAILED] "
-            + "; ".join(validation_errors))
+            "[NORMALIZED_VIDEO_VALIDATION_FAILED] " + "; ".join(validation_errors)
+        )
 
     # --- 8. Compute SHA256 & write manifests ---
     with get_sync_session() as session:
@@ -231,12 +233,13 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
         session.commit()
 
     import hashlib
+
     with open(normalized_abs, "rb") as f:
         norm_bytes = f.read()
     norm_sha256 = hashlib.sha256(norm_bytes).hexdigest()
-    norm_size = len(norm_bytes)
+    len(norm_bytes)
 
-    input_sha256 = probe_before.raw_json is not None and _sha256_file(source_path) or ""
+    probe_before.raw_json is not None and _sha256_file(source_path) or ""
 
     producer = ArtifactProducer(
         model_name="ffmpeg_normalizer",
@@ -246,7 +249,7 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
     )
 
     # Write normalized.mp4 artifact
-    norm_manifest = writer.write_bytes_artifact(
+    writer.write_bytes_artifact(
         relative_path=normalized_rel,
         content=norm_bytes,
         artifact_type="normalized_video",
@@ -374,11 +377,12 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _resolve_uri(uri: str, storage_root: str) -> str:
     """Convert storage:// URI to local absolute path."""
     prefix = "storage://"
     if uri.startswith(prefix):
-        return os.path.join(storage_root, uri[len(prefix):])
+        return os.path.join(storage_root, uri[len(prefix) :])
     return uri
 
 
@@ -395,6 +399,7 @@ def _fail(task_id: str, video_id: str, code: str, message: str) -> dict:
 def _write_json_atomic(path: str, data: dict) -> None:
     """Write JSON to a temp file then atomic rename."""
     import json
+
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False, default=str)
@@ -412,6 +417,7 @@ def _remove_if_exists(path: str) -> None:
 def _sha256_file(path: str) -> str:
     """Compute SHA-256 hex digest of a file."""
     import hashlib
+
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(8192), b""):

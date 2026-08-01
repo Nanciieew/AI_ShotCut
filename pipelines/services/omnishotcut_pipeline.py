@@ -403,18 +403,25 @@ def run_omnishotcut_pipeline(
     if extract_keyframes:
         print("  [Keyframes] Extracting 25%/50%/75% keyframes per shot ...")
         try:
-            from pipelines.services.keyframe_service import run_keyframe_extraction
             import os as _os
 
+            from pipelines.services.keyframe_service import run_keyframe_extraction
+
             storage_root = str(output_root)
-            normalized_path = _os.path.join(
+            kf_video_path = _os.path.join(
                 storage_root,
-                "projects", project_id, "videos", video_id,
-                "artifacts", "video_normalization", "1.0.0", "normalized.mp4",
+                "projects",
+                project_id,
+                "videos",
+                video_id,
+                "artifacts",
+                "video_normalization",
+                "1.0.0",
+                "normalized.mp4",
             )
 
             keyframe_result = run_keyframe_extraction(
-                video_path=normalized_path,
+                video_path=kf_video_path,
                 shots_data=shots_data,
                 fps_num=probe_after.fps_num,
                 fps_den=probe_after.fps_den,
@@ -433,9 +440,11 @@ def run_omnishotcut_pipeline(
                 result.keyframes_artifact_uri = keyframe_result.summary_artifact_uri
                 result.keyframe_image_count = keyframe_result.unique_image_count
                 shot_count = keyframe_result.shot_count
-                print(f"  [Keyframes] Done: {keyframe_result.unique_image_count} "
-                      f"images for {shot_count} shots "
-                      f"({keyframe_result.runtime_ms}ms)")
+                print(
+                    f"  [Keyframes] Done: {keyframe_result.unique_image_count} "
+                    f"images for {shot_count} shots "
+                    f"({keyframe_result.runtime_ms}ms)"
+                )
             else:
                 result.warnings.append(
                     f"Keyframe extraction failed: "

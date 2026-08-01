@@ -1,6 +1,5 @@
-﻿"""Unit tests for core/media/keyframes.py — target math + extraction."""
+"""Unit tests for core/media/keyframes.py — target math + extraction."""
 
-import io
 import os
 import sys
 import tempfile
@@ -12,27 +11,27 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent.parent))
 
 from core.media.keyframes import (
-    select_frame,
-    frame_to_timestamp_ms,
+    POSITIONS,
+    KeyframeTarget,
     compute_keyframe_targets,
     extract_keyframes,
-    KeyframeTarget,
-    ExtractionResult,
-    POSITIONS,
+    frame_to_timestamp_ms,
+    select_frame,
 )
 
 # ---------------------------------------------------------------------------
 # Target frame math (integer arithmetic, no round(), no floats)
 # ---------------------------------------------------------------------------
 
+
 class TestSelectFrame:
     """Integer target frame selection."""
 
     def test_normal_shot_24000_1001(self):
         """Shot [0, 103) at ~23.976fps."""
-        assert select_frame(0, 103, 1, 4) == 26   # 25%
-        assert select_frame(0, 103, 1, 2) == 51   # 50%
-        assert select_frame(0, 103, 3, 4) == 77   # 75%
+        assert select_frame(0, 103, 1, 4) == 26  # 25%
+        assert select_frame(0, 103, 1, 2) == 51  # 50%
+        assert select_frame(0, 103, 3, 4) == 77  # 75%
 
     def test_single_frame_shot(self):
         """1-frame shot: all positions → same frame."""
@@ -90,14 +89,20 @@ class TestFrameToTimestampMs:
 # compute_keyframe_targets
 # ---------------------------------------------------------------------------
 
+
 class TestComputeKeyframeTargets:
     """Full target computation from shot list."""
 
     def test_single_shot_three_targets(self):
         shots = [
-            {"shot_id": "shot_000001", "index": 0,
-             "start_frame": 0, "end_frame_exclusive": 103,
-             "start_ms": 0, "end_ms": 4280},
+            {
+                "shot_id": "shot_000001",
+                "index": 0,
+                "start_frame": 0,
+                "end_frame_exclusive": 103,
+                "start_ms": 0,
+                "end_ms": 4280,
+            },
         ]
         targets = compute_keyframe_targets(shots, 24000, 1001)
         assert len(targets) == 3
@@ -105,12 +110,22 @@ class TestComputeKeyframeTargets:
 
     def test_targets_sorted_by_frame_number(self):
         shots = [
-            {"shot_id": "shot_000002", "index": 1,
-             "start_frame": 100, "end_frame_exclusive": 200,
-             "start_ms": 4170, "end_ms": 8345},
-            {"shot_id": "shot_000001", "index": 0,
-             "start_frame": 0, "end_frame_exclusive": 100,
-             "start_ms": 0, "end_ms": 4170},
+            {
+                "shot_id": "shot_000002",
+                "index": 1,
+                "start_frame": 100,
+                "end_frame_exclusive": 200,
+                "start_ms": 4170,
+                "end_ms": 8345,
+            },
+            {
+                "shot_id": "shot_000001",
+                "index": 0,
+                "start_frame": 0,
+                "end_frame_exclusive": 100,
+                "start_ms": 0,
+                "end_ms": 4170,
+            },
         ]
         targets = compute_keyframe_targets(shots, 24000, 1001)
         frames = [t.frame_number for t in targets]
@@ -119,10 +134,8 @@ class TestComputeKeyframeTargets:
     def test_global_dedup_overlapping_shots(self):
         """Two shots that share a frame boundary should dedup."""
         shots = [
-            {"shot_id": "shot_01", "index": 0,
-             "start_frame": 0, "end_frame_exclusive": 10},
-            {"shot_id": "shot_02", "index": 1,
-             "start_frame": 10, "end_frame_exclusive": 20},
+            {"shot_id": "shot_01", "index": 0, "start_frame": 0, "end_frame_exclusive": 10},
+            {"shot_id": "shot_02", "index": 1, "start_frame": 10, "end_frame_exclusive": 20},
         ]
         targets = compute_keyframe_targets(shots, 24000, 1001)
         frames = [t.frame_number for t in targets]
@@ -130,8 +143,7 @@ class TestComputeKeyframeTargets:
 
     def test_filenames_are_deterministic(self):
         shots = [
-            {"shot_id": "shot_000001", "index": 0,
-             "start_frame": 0, "end_frame_exclusive": 100},
+            {"shot_id": "shot_000001", "index": 0, "start_frame": 0, "end_frame_exclusive": 100},
         ]
         targets = compute_keyframe_targets(shots, 24000, 1001)
         expected = [
@@ -150,6 +162,7 @@ class TestComputeKeyframeTargets:
 # ---------------------------------------------------------------------------
 # extract_keyframes (requires PyAV)
 # ---------------------------------------------------------------------------
+
 
 class TestExtractKeyframes:
     """Single-pass PyAV extraction tests."""
@@ -190,18 +203,27 @@ class TestExtractKeyframes:
         """Extract frames 0, 15, 29 and verify they exist."""
         targets = [
             KeyframeTarget(
-                frame_number=0, timestamp_ms=0,
-                shot_id="test", position_num=1, position_den=4,
+                frame_number=0,
+                timestamp_ms=0,
+                shot_id="test",
+                position_num=1,
+                position_den=4,
                 filename="frame_000.jpg",
             ),
             KeyframeTarget(
-                frame_number=15, timestamp_ms=500,
-                shot_id="test", position_num=1, position_den=2,
+                frame_number=15,
+                timestamp_ms=500,
+                shot_id="test",
+                position_num=1,
+                position_den=2,
                 filename="frame_015.jpg",
             ),
             KeyframeTarget(
-                frame_number=29, timestamp_ms=966,
-                shot_id="test", position_num=3, position_den=4,
+                frame_number=29,
+                timestamp_ms=966,
+                shot_id="test",
+                position_num=3,
+                position_den=4,
                 filename="frame_029.jpg",
             ),
         ]
@@ -242,8 +264,11 @@ class TestExtractKeyframes:
 
         targets = [
             KeyframeTarget(
-                frame_number=5, timestamp_ms=166,
-                shot_id="test", position_num=1, position_den=2,
+                frame_number=5,
+                timestamp_ms=166,
+                shot_id="test",
+                position_num=1,
+                position_den=2,
                 filename="frame_005.jpg",
             ),
         ]
@@ -280,20 +305,32 @@ class TestExtractKeyframes:
     def test_sha256_is_deterministic(self, synthetic_video_path):
         """Same frame encoded twice → same SHA-256."""
         targets_a = [
-            KeyframeTarget(frame_number=10, timestamp_ms=333,
-                           shot_id="a", position_num=1, position_den=2,
-                           filename="a.jpg"),
+            KeyframeTarget(
+                frame_number=10,
+                timestamp_ms=333,
+                shot_id="a",
+                position_num=1,
+                position_den=2,
+                filename="a.jpg",
+            ),
         ]
         targets_b = [
-            KeyframeTarget(frame_number=10, timestamp_ms=333,
-                           shot_id="b", position_num=1, position_den=2,
-                           filename="b.jpg"),
+            KeyframeTarget(
+                frame_number=10,
+                timestamp_ms=333,
+                shot_id="b",
+                position_num=1,
+                position_den=2,
+                filename="b.jpg",
+            ),
         ]
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            extract_keyframes(synthetic_video_path, targets_a, Path(tmpdir),
-                              image_format="jpeg", quality=100)
-            extract_keyframes(synthetic_video_path, targets_b, Path(tmpdir),
-                              image_format="jpeg", quality=100)
+            extract_keyframes(
+                synthetic_video_path, targets_a, Path(tmpdir), image_format="jpeg", quality=100
+            )
+            extract_keyframes(
+                synthetic_video_path, targets_b, Path(tmpdir), image_format="jpeg", quality=100
+            )
 
             assert targets_a[0].sha256 == targets_b[0].sha256

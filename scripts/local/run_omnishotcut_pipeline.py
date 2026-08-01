@@ -140,7 +140,7 @@ def main() -> int:
     print()
 
     if result.keyframes_artifact_uri:
-        print(f"  [Keyframes]")
+        print("  [Keyframes]")
         print(f"    Artifact URI:  {result.keyframes_artifact_uri}")
         print(f"    Image count:   {result.keyframe_image_count or 0}")
         print()

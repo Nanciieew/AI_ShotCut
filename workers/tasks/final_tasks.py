@@ -6,14 +6,10 @@ Handles:
   - final.assemble: collects artifacts and produces final_result.json (stub)
 """
 
-import os
-from datetime import datetime, timezone
-
-from workers.celery_app import app
-from core.database.session_sync import get_sync_session
 from core.database.repositories import TaskRepository
-from core.logging.context import set_task_context, clear_task_context
-from core.media.exceptions import NonRetryableTaskError
+from core.database.session_sync import get_sync_session
+from core.logging.context import clear_task_context, set_task_context
+from workers.celery_app import app
 
 
 @app.task(name="final.pipeline_complete", bind=True, max_retries=1)

@@ -10,7 +10,6 @@ It delegates to core.orchestration canvas builders instead.
 """
 
 import uuid
-from typing import Optional
 
 from core.orchestration import build_omnishotcut_canvas
 
@@ -22,7 +21,7 @@ def _new_id() -> str:
 async def submit_full_pipeline(
     db,
     video_path: str,
-    project_id: Optional[str] = None,
+    project_id: str | None = None,
     extract_keyframes: bool = False,
 ) -> dict:
     """Create DB records and submit the analysis pipeline chain.
@@ -44,11 +43,11 @@ async def submit_full_pipeline(
     dict
         {task_id, video_id, project_id, status, stage, message}
     """
-    from core.database.session_sync import get_sync_session
     from core.database.repositories import (
         TaskRepository,
         VideoRepository,
     )
+    from core.database.session_sync import get_sync_session
 
     vid = _new_id()
     task_id = _new_id()
@@ -63,14 +62,14 @@ async def submit_full_pipeline(
 
         # Create video record + original artifact
         source_uri = f"storage://projects/{proj_id}/videos/{vid}/source/{video_path}"
-        video = video_repo.create(
+        video_repo.create(
             video_id=vid,
             project_id=proj_id,
             source_uri=source_uri,
         )
 
         # Create task
-        task = task_repo.create(
+        task_repo.create(
             task_id=task_id,
             video_id=vid,
             task_type="omnishotcut_pipeline",
@@ -159,7 +158,7 @@ async def get_video_results(video_id: str, db) -> dict:
     """Get all results + artifacts for a video."""
     from sqlalchemy import select
 
-    from core.database.models import Video, Task, Artifact, Shot
+    from core.database.models import Artifact, Shot, Task, Video
 
     # Video
     result = await db.execute(select(Video).where(Video.video_id == video_id))
@@ -168,15 +167,11 @@ async def get_video_results(video_id: str, db) -> dict:
         return {"video_id": video_id, "status": "NOT_FOUND"}
 
     # Shots
-    result = await db.execute(
-        select(Shot).where(Shot.video_id == video_id).order_by(Shot.index)
-    )
+    result = await db.execute(select(Shot).where(Shot.video_id == video_id).order_by(Shot.index))
     shots = result.scalars().all()
 
     # Artifacts
-    result = await db.execute(
-        select(Artifact).where(Artifact.video_id == video_id)
-    )
+    result = await db.execute(select(Artifact).where(Artifact.video_id == video_id))
     artifacts = result.scalars().all()
 
     # Latest task
@@ -200,7 +195,9 @@ async def get_video_results(video_id: str, db) -> dict:
             "status": task.status if task else None,
             "stage": task.stage if task else None,
             "progress": task.progress if task else 0,
-        } if task else None,
+        }
+        if task
+        else None,
         "shots": [
             {
                 "shot_id": s.shot_id,

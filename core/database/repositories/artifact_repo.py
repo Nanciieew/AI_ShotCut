@@ -54,7 +54,7 @@ class ArtifactRepository:
         video_id: str,
         artifact_type: str,
         model_name: str,
-    ) -> Optional[Artifact]:
+    ) -> Artifact | None:
         """Get the artifact produced by a specific task's model run.
 
         Joins Artifact → ModelRun on run_id, filters by task_id + model_name.

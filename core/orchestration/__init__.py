@@ -1,4 +1,4 @@
-﻿"""Orchestration layer — Celery canvas builders.
+"""Orchestration layer — Celery canvas builders.
 
 Per CLAUDE.md §2.1: the orchestration layer defines task execution order,
 parallel/serial decisions, and failure handling. API layer MUST NOT directly
