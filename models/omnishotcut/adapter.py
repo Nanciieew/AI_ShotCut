@@ -284,7 +284,11 @@ class OmniShotCutAdapter(BaseModelAdapter):
             }
         except Exception:
             # If frame-diff fails, return raw ranges unfiltered
-            return raw_ranges, {"boundaries_checked": 0, "false_positives_removed": 0, "error": "frame_diff_failed"}
+            return raw_ranges, {
+                "boundaries_checked": 0,
+                "false_positives_removed": 0,
+                "error": "frame_diff_failed",
+            }
 
     # ------------------------------------------------------------------
     # Helpers
