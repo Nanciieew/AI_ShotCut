@@ -1,0 +1,18 @@
+{
+  "video": "No_Cut_hard.mp4",
+  "fps_num": 30,
+  "fps_den": 1,
+  "annotated_by": "human-reviewed",
+  "annotation_date": "2026-07-28",
+  "tolerance_frames": 3,
+  "status": "deviated",
+  "model_issue": "high_confidence_false_positive",
+  "notes": "Expected 0 cuts (1 shot). Model detected 4 shots with intra_conf > 0.99 at frames [1859, 2142, 2339]. Motion/content changes at 128x96 resolution trigger false hard-cut detection. Confidence filtering CANNOT solve — all FP's have conf > 0.997. Known limitation.",
+  "model_raw_detections": {
+    "false_positives_at_frames": [1859, 2142, 2339],
+    "all_confidences_above": 0.997
+  },
+  "shots": [
+    {"index": 0, "start_frame_expected": 0, "end_frame_expected": 2718, "boundary_type": "none", "description": "Single continuous shot — no cuts. Model falsely split into 4 segments."}
+  ]
+}

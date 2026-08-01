@@ -1,0 +1,152 @@
+{
+  "video_id": "test_Multiple_Cuts_hard",
+  "model": {
+    "name": "omnishotcut",
+    "version": "0.1.0"
+  },
+  "shots": [
+    {
+      "shot_id": "shot_000001",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 0,
+      "start_ms": 0,
+      "end_ms": 7000,
+      "start_frame": 0,
+      "end_frame_exclusive": 210,
+      "boundary_type": null,
+      "confidence": 0.999
+    },
+    {
+      "shot_id": "shot_000002",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 1,
+      "start_ms": 7000,
+      "end_ms": 7200,
+      "start_frame": 210,
+      "end_frame_exclusive": 216,
+      "boundary_type": null,
+      "confidence": 0.8705
+    },
+    {
+      "shot_id": "shot_000003",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 2,
+      "start_ms": 7200,
+      "end_ms": 9200,
+      "start_frame": 216,
+      "end_frame_exclusive": 276,
+      "boundary_type": null,
+      "confidence": 0.9996
+    },
+    {
+      "shot_id": "shot_000004",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 3,
+      "start_ms": 9200,
+      "end_ms": 11566,
+      "start_frame": 276,
+      "end_frame_exclusive": 347,
+      "boundary_type": null,
+      "confidence": 0.9996
+    },
+    {
+      "shot_id": "shot_000005",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 4,
+      "start_ms": 11566,
+      "end_ms": 13700,
+      "start_frame": 347,
+      "end_frame_exclusive": 411,
+      "boundary_type": null,
+      "confidence": 0.9999
+    },
+    {
+      "shot_id": "shot_000006",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 5,
+      "start_ms": 13700,
+      "end_ms": 16400,
+      "start_frame": 411,
+      "end_frame_exclusive": 492,
+      "boundary_type": null,
+      "confidence": 0.9963
+    },
+    {
+      "shot_id": "shot_000007",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 6,
+      "start_ms": 16400,
+      "end_ms": 21200,
+      "start_frame": 492,
+      "end_frame_exclusive": 636,
+      "boundary_type": null,
+      "confidence": 0.9998
+    },
+    {
+      "shot_id": "shot_000008",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 7,
+      "start_ms": 21200,
+      "end_ms": 28333,
+      "start_frame": 636,
+      "end_frame_exclusive": 850,
+      "boundary_type": null,
+      "confidence": 0.9995
+    },
+    {
+      "shot_id": "shot_000009",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 8,
+      "start_ms": 28333,
+      "end_ms": 30766,
+      "start_frame": 850,
+      "end_frame_exclusive": 923,
+      "boundary_type": null,
+      "confidence": 0.9998
+    },
+    {
+      "shot_id": "shot_000010",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 9,
+      "start_ms": 30766,
+      "end_ms": 38233,
+      "start_frame": 923,
+      "end_frame_exclusive": 1147,
+      "boundary_type": null,
+      "confidence": 0.9998
+    },
+    {
+      "shot_id": "shot_000011",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 10,
+      "start_ms": 38233,
+      "end_ms": 40366,
+      "start_frame": 1147,
+      "end_frame_exclusive": 1211,
+      "boundary_type": null,
+      "confidence": 0.9993
+    },
+    {
+      "shot_id": "shot_000012",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 11,
+      "start_ms": 40366,
+      "end_ms": 50133,
+      "start_frame": 1211,
+      "end_frame_exclusive": 1504,
+      "boundary_type": null,
+      "confidence": 0.9998
+    },
+    {
+      "shot_id": "shot_000013",
+      "video_id": "test_Multiple_Cuts_hard",
+      "index": 12,
+      "start_ms": 50133,
+      "end_ms": 56300,
+      "start_frame": 1504,
+      "end_frame_exclusive": 1689,
+      "boundary_type": null,
+      "confidence": 0.9992
+    }
+  ]
+}

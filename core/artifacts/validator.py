@@ -1,8 +1,6 @@
 """Artifact validator — verify manifest integrity and schema compliance."""
 
-import json
 from pathlib import Path
-from typing import Optional
 
 from core.artifacts.manifest import ArtifactManifest
 
@@ -20,9 +18,7 @@ class ArtifactValidator:
         """
         errors: list[str] = []
         full_path = self._resolve(relative_path)
-        manifest_path = full_path.with_suffix(
-            full_path.suffix + ".manifest.json"
-        )
+        manifest_path = full_path.with_suffix(full_path.suffix + ".manifest.json")
 
         if not full_path.is_file():
             return {"valid": False, "errors": [f"Artifact not found: {relative_path}"]}
@@ -46,8 +42,7 @@ class ArtifactValidator:
         actual_sha256 = hashlib.sha256(full_path.read_bytes()).hexdigest()
         if actual_sha256 != manifest.output.sha256:
             errors.append(
-                f"SHA-256 mismatch: expected {manifest.output.sha256}, "
-                f"got {actual_sha256}"
+                f"SHA-256 mismatch: expected {manifest.output.sha256}, got {actual_sha256}"
             )
 
         # Verify schema_version is set

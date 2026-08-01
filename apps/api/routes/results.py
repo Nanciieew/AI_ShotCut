@@ -4,10 +4,11 @@ Result query routes.
 GET /api/v1/videos/{video_id}/results — Get analysis results for a video
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.dependencies import get_db
+from apps.api.services.analysis_service import get_video_results
 
 router = APIRouter(tags=["results"])
 
@@ -17,13 +18,12 @@ async def get_results(
     video_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the analysis results for a video.
+    """Get the full analysis results for a video.
 
-    If the pipeline is still running, returns status PROCESSING.
-    If complete, returns the result_uri pointing to final_result.json.
+    Returns video metadata, shot list, artifact references, and
+    current pipeline status. If still running, status reflects progress.
     """
-    # TODO: Implement result query (MVP Phase 2)
-    return {
-        "status": "PROCESSING",
-        "message": "placeholder — get_results not yet implemented",
-    }
+    result = await get_video_results(video_id, db)
+    if result.get("status") == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
+    return result

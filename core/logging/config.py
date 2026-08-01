@@ -7,8 +7,6 @@ Provides:
 """
 
 import logging
-import os
-import uuid
 
 import structlog
 
@@ -39,13 +37,11 @@ def configure_logging(
         # Add timestamp
         timestamper,
         # Format as JSON or console
-        structlog.dev.ConsoleRenderer()
-        if not json_output
-        else structlog.processors.JSONRenderer(),
+        structlog.dev.ConsoleRenderer() if not json_output else structlog.processors.JSONRenderer(),
     ]
 
     structlog.configure(
-        processors=processors,
+        processors=processors,  # type: ignore[arg-type]
         context_class=dict,
         logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.stdlib.BoundLogger,

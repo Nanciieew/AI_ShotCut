@@ -2,13 +2,12 @@
 
 import hashlib
 import json
-import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from core.artifacts.manifest import (
-    ArtifactManifest,
     ArtifactInputRef,
+    ArtifactManifest,
     ArtifactOutputRef,
     ArtifactProducer,
 )
@@ -34,8 +33,8 @@ class ArtifactWriter:
         video_id: str,
         run_id: str,
         producer: ArtifactProducer,
-        input_ref: Optional[ArtifactInputRef] = None,
-        parameters: Optional[dict[str, Any]] = None,
+        input_ref: ArtifactInputRef | None = None,
+        parameters: dict[str, Any] | None = None,
         schema_version: str = "1.0",
     ) -> ArtifactManifest:
         """Write a JSON artifact + its manifest, atomically.
@@ -66,8 +65,8 @@ class ArtifactWriter:
         video_id: str,
         run_id: str,
         producer: ArtifactProducer,
-        input_ref: Optional[ArtifactInputRef] = None,
-        parameters: Optional[dict[str, Any]] = None,
+        input_ref: ArtifactInputRef | None = None,
+        parameters: dict[str, Any] | None = None,
         schema_version: str = "1.0",
     ) -> ArtifactManifest:
         """Write a binary artifact + its manifest, atomically."""
@@ -97,8 +96,8 @@ class ArtifactWriter:
         video_id: str,
         run_id: str,
         producer: ArtifactProducer,
-        input_ref: Optional[ArtifactInputRef],
-        parameters: Optional[dict[str, Any]],
+        input_ref: ArtifactInputRef | None,
+        parameters: dict[str, Any] | None,
         schema_version: str,
     ) -> ArtifactManifest:
         full_path = self._resolve(relative_path)
@@ -135,9 +134,9 @@ class ArtifactWriter:
         manifest_tmp = manifest_path.with_suffix(manifest_path.suffix + ".tmp")
         manifest_tmp.write_bytes(manifest_json)
 
-        # Atomic rename both
-        tmp_path.rename(full_path)
-        manifest_tmp.rename(manifest_path)
+        # Atomic rename both (use replace for cross-platform safety)
+        tmp_path.replace(full_path)
+        manifest_tmp.replace(manifest_path)
 
         return manifest
 
@@ -148,7 +147,7 @@ class ArtifactWriter:
         return resolved
 
     @staticmethod
-    def _count_records(content: bytes, artifact_type: str) -> Optional[int]:
+    def _count_records(content: bytes, artifact_type: str) -> int | None:
         """Try to count records for JSON artifacts."""
         try:
             data = json.loads(content)

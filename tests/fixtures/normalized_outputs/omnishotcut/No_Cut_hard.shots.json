@@ -1,0 +1,20 @@
+{
+  "video_id": "test_No_Cut_hard",
+  "model": {
+    "name": "omnishotcut",
+    "version": "0.1.0"
+  },
+  "shots": [
+    {
+      "shot_id": "shot_000001",
+      "video_id": "test_No_Cut_hard",
+      "index": 0,
+      "start_ms": 0,
+      "end_ms": 90633,
+      "start_frame": 0,
+      "end_frame_exclusive": 2719,
+      "boundary_type": null,
+      "confidence": 0.9986
+    }
+  ]
+}

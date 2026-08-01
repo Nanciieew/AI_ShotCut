@@ -1,0 +1,13 @@
+{
+  "video": "Hard_Cut_1.mp4",
+  "fps_num": 30, "fps_den": 1,
+  "annotated_by": "human-reviewed",
+  "annotation_date": "2026-07-28",
+  "tolerance_frames": 3,
+  "status": "matched",
+  "notes": "Frame-diff filtered out model FP at frame 661 (MAD=2.6). 3 shots match ground truth.",
+  "shots": [
+    {"index": 0, "start_frame_expected": 0,   "end_frame_expected": 871,  "boundary_type": "hard_cut", "description": "Shot 1+2 merged — frame 661 was FP"},
+    {"index": 1, "start_frame_expected": 871, "end_frame_expected": 1266, "boundary_type": "hard_cut", "description": "Shot 3 → end"}
+  ]
+}

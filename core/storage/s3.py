@@ -5,8 +5,6 @@ Activate by setting STORAGE_BACKEND=s3 and configuring
 the S3 credentials via environment variables.
 """
 
-from typing import Optional
-
 from core.storage.base import BaseStorage
 
 
@@ -23,10 +21,10 @@ class S3Storage(BaseStorage):
             "Use LocalStorage during development."
         )
 
-    async def put(self, key: str, data: bytes, content_type: Optional[str] = None) -> str:
+    async def put(self, key: str, data: bytes, content_type: str | None = None) -> str:
         raise NotImplementedError
 
-    async def get(self, key: str) -> Optional[bytes]:
+    async def get(self, key: str) -> bytes | None:
         raise NotImplementedError
 
     async def delete(self, key: str) -> bool:

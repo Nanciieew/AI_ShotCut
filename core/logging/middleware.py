@@ -7,8 +7,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from core.logging.context import set_task_context, clear_task_context
 from core.logging.config import get_logger
+from core.logging.context import clear_task_context, set_task_context
 
 logger = get_logger(__name__)
 

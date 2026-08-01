@@ -85,7 +85,28 @@ celery -A workers.celery_app worker --loglevel=info -Q video,shot,subtitle,featu
 uvicorn apps.api.main:app --reload
 ```
 
-### 6. 验证
+### 6. 环境检查
+
+```bash
+# 项目级完整环境报告
+python scripts/check_environment.py
+python scripts/check_environment.py --json
+python scripts/check_environment.py --output report.json
+
+# OmniShotCut 专项检查（含模型权重、测试视频、兼容性）
+python scripts/check_omnishotcut_environment.py
+python scripts/check_omnishotcut_environment.py --check-fixtures
+python scripts/check_omnishotcut_environment.py --load-model
+python scripts/check_omnishotcut_environment.py --run-smoke-test
+```
+
+环境检查模块位于 `core/environment/`，覆盖：
+- 操作系统 / 架构 / Python / CPU / 内存
+- FFmpeg / FFprobe / Docker / nvidia-smi
+- PyTorch / CUDA / GPU / Torchvision
+- STORAGE_ROOT / MODEL_STORE_ROOT 磁盘空间和可写性
+
+### 7. 验证
 
 ```bash
 # 健康检查

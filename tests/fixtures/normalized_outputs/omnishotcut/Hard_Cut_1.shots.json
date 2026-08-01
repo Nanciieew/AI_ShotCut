@@ -1,0 +1,42 @@
+{
+  "video_id": "test_Hard_Cut_1",
+  "model": {
+    "name": "omnishotcut",
+    "version": "0.1.0"
+  },
+  "shots": [
+    {
+      "shot_id": "shot_000001",
+      "video_id": "test_Hard_Cut_1",
+      "index": 0,
+      "start_ms": 0,
+      "end_ms": 15200,
+      "start_frame": 0,
+      "end_frame_exclusive": 456,
+      "boundary_type": null,
+      "confidence": 0.9996
+    },
+    {
+      "shot_id": "shot_000002",
+      "video_id": "test_Hard_Cut_1",
+      "index": 1,
+      "start_ms": 15200,
+      "end_ms": 29033,
+      "start_frame": 456,
+      "end_frame_exclusive": 871,
+      "boundary_type": null,
+      "confidence": 0.9978
+    },
+    {
+      "shot_id": "shot_000003",
+      "video_id": "test_Hard_Cut_1",
+      "index": 2,
+      "start_ms": 29033,
+      "end_ms": 42233,
+      "start_frame": 871,
+      "end_frame_exclusive": 1267,
+      "boundary_type": null,
+      "confidence": 0.9989
+    }
+  ]
+}

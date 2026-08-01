@@ -6,7 +6,6 @@ must implement this base class.
 """
 
 from abc import ABC, abstractmethod
-from typing import BinaryIO, Optional
 
 
 class BaseStorage(ABC):
@@ -20,13 +19,13 @@ class BaseStorage(ABC):
         self,
         key: str,
         data: bytes,
-        content_type: Optional[str] = None,
+        content_type: str | None = None,
     ) -> str:
         """Store data and return the URI."""
         ...
 
     @abstractmethod
-    async def get(self, key: str) -> Optional[bytes]:
+    async def get(self, key: str) -> bytes | None:
         """Retrieve data by key. Returns None if not found."""
         ...
 

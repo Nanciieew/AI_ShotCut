@@ -6,6 +6,7 @@ via the DATABASE_URL environment variable.
 """
 
 import os
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 DATABASE_URL = os.getenv(
@@ -22,7 +23,7 @@ _async_session_factory = async_sessionmaker(
 )
 
 
-async def get_db() -> AsyncSession:
+async def get_db():  # type: ignore[misc]
     """Yield an async database session.
 
     Usage (FastAPI dependency)::

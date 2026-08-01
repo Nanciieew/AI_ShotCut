@@ -5,7 +5,7 @@
 # provenance, integrity, and schema version information.
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -28,9 +28,7 @@ class ArtifactProducer(BaseModel):
 class ArtifactInputRef(BaseModel):
     """Reference to the input that produced this artifact."""
 
-    video_sha256: Optional[str] = Field(
-        default=None, description="SHA-256 of the input video file"
-    )
+    video_sha256: str | None = Field(default=None, description="SHA-256 of the input video file")
     input_artifact_uris: list[str] = Field(
         default_factory=list,
         description="URIs of upstream artifacts consumed",
@@ -42,12 +40,10 @@ class ArtifactOutputRef(BaseModel):
 
     file: str = Field(..., description="Output filename, e.g. shots.json")
     sha256: str = Field(..., description="SHA-256 of the final file content")
-    record_count: Optional[int] = Field(
+    record_count: int | None = Field(
         default=None, description="Number of records (shots, segments, etc.)"
     )
-    size_bytes: Optional[int] = Field(
-        default=None, description="File size in bytes"
-    )
+    size_bytes: int | None = Field(default=None, description="File size in bytes")
 
 
 class ArtifactManifest(BaseModel):
@@ -66,9 +62,7 @@ class ArtifactManifest(BaseModel):
     producer: ArtifactProducer
     input: ArtifactInputRef = Field(default_factory=ArtifactInputRef)
     output: ArtifactOutputRef
-    parameters: dict[str, Any] = Field(
-        default_factory=dict, description="Model parameters used"
-    )
+    parameters: dict[str, Any] = Field(default_factory=dict, description="Model parameters used")
     created_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat(),
         description="ISO-8601 creation timestamp",

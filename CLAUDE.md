@@ -233,6 +233,11 @@ broker_connection_retry_on_startup = True
 - 包括：task、repository、revision、code_license、weights_license、commercial_use
 - License 状态未核验时标记 `unknown`，不得猜测
 - 模型启用前 `enabled: false`
+- **新增/修改 Adapter 后，必须运行测试流程**：
+  ```bash
+  python -m scripts.experiments.run_model_test --model <model_name>
+  ```
+  确保 IO_Rule 合规，0 issues 才能提交
 
 ### Artifact 管理
 - 每个主要 Artifact 必须生成伴随 `.manifest.json`（使用 `core/artifacts/writer.py`）

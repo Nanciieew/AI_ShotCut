@@ -8,16 +8,15 @@ Actual video/audio/feature files are stored on disk or object storage.
 
 import uuid
 from datetime import datetime, timezone
+
 from sqlalchemy import (
-    Column,
-    String,
-    Integer,
-    Float,
-    Boolean,
-    DateTime,
-    Text,
-    ForeignKey,
     JSON,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -34,6 +33,7 @@ def _now() -> datetime:
 # Base
 # ---------------------------------------------------------------------------
 
+
 class Base(DeclarativeBase):
     pass
 
@@ -41,6 +41,7 @@ class Base(DeclarativeBase):
 # ---------------------------------------------------------------------------
 # Project
 # ---------------------------------------------------------------------------
+
 
 class Project(Base):
     __tablename__ = "projects"
@@ -56,6 +57,7 @@ class Project(Base):
 # ---------------------------------------------------------------------------
 # Video
 # ---------------------------------------------------------------------------
+
 
 class Video(Base):
     __tablename__ = "videos"
@@ -87,13 +89,12 @@ class Video(Base):
 # Task
 # ---------------------------------------------------------------------------
 
+
 class Task(Base):
     __tablename__ = "tasks"
 
     task_id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    video_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("videos.video_id"), nullable=False
-    )
+    video_id: Mapped[str] = mapped_column(String(32), ForeignKey("videos.video_id"), nullable=False)
     task_type: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="PENDING")
     stage: Mapped[str] = mapped_column(String(64), nullable=True)
@@ -114,13 +115,12 @@ class Task(Base):
 # Model Run
 # ---------------------------------------------------------------------------
 
+
 class ModelRun(Base):
     __tablename__ = "model_runs"
 
     run_id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    task_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("tasks.task_id"), nullable=False
-    )
+    task_id: Mapped[str] = mapped_column(String(32), ForeignKey("tasks.task_id"), nullable=False)
     video_id: Mapped[str] = mapped_column(String(32), nullable=False)
     model_name: Mapped[str] = mapped_column(String(64), nullable=False)
     model_version: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -142,18 +142,13 @@ class ModelRun(Base):
 # Artifact
 # ---------------------------------------------------------------------------
 
+
 class Artifact(Base):
     __tablename__ = "artifacts"
 
-    artifact_id: Mapped[str] = mapped_column(
-        String(32), primary_key=True, default=_uuid
-    )
-    video_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("videos.video_id"), nullable=False
-    )
-    run_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("model_runs.run_id"), nullable=False
-    )
+    artifact_id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    video_id: Mapped[str] = mapped_column(String(32), ForeignKey("videos.video_id"), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(32), ForeignKey("model_runs.run_id"), nullable=False)
     artifact_type: Mapped[str] = mapped_column(String(64), nullable=False)
     uri: Mapped[str] = mapped_column(String(1024), nullable=False)
     format: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -169,13 +164,12 @@ class Artifact(Base):
 # Shot
 # ---------------------------------------------------------------------------
 
+
 class Shot(Base):
     __tablename__ = "shots"
 
     shot_id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    video_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("videos.video_id"), nullable=False
-    )
+    video_id: Mapped[str] = mapped_column(String(32), ForeignKey("videos.video_id"), nullable=False)
     index: Mapped[int] = mapped_column(Integer, nullable=False)
     start_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     end_ms: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -191,15 +185,12 @@ class Shot(Base):
 # Subtitle Segment
 # ---------------------------------------------------------------------------
 
+
 class SubtitleSegment(Base):
     __tablename__ = "subtitle_segments"
 
-    subtitle_id: Mapped[str] = mapped_column(
-        String(32), primary_key=True, default=_uuid
-    )
-    video_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("videos.video_id"), nullable=False
-    )
+    subtitle_id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    video_id: Mapped[str] = mapped_column(String(32), ForeignKey("videos.video_id"), nullable=False)
     start_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     end_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=True)
@@ -213,13 +204,12 @@ class SubtitleSegment(Base):
 # Scene
 # ---------------------------------------------------------------------------
 
+
 class Scene(Base):
     __tablename__ = "scenes"
 
     scene_id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    video_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("videos.video_id"), nullable=False
-    )
+    video_id: Mapped[str] = mapped_column(String(32), ForeignKey("videos.video_id"), nullable=False)
     index: Mapped[int] = mapped_column(Integer, nullable=False)
     start_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     end_ms: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -235,15 +225,12 @@ class Scene(Base):
 # Scene Evidence
 # ---------------------------------------------------------------------------
 
+
 class SceneEvidence(Base):
     __tablename__ = "scene_evidence"
 
-    evidence_id: Mapped[str] = mapped_column(
-        String(32), primary_key=True, default=_uuid
-    )
-    scene_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("scenes.scene_id"), nullable=False
-    )
+    evidence_id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    scene_id: Mapped[str] = mapped_column(String(32), ForeignKey("scenes.scene_id"), nullable=False)
     visual_continuity: Mapped[float] = mapped_column(Float, nullable=True)
     character_continuity: Mapped[float] = mapped_column(Float, nullable=True)
     location_continuity: Mapped[float] = mapped_column(Float, nullable=True)

@@ -8,12 +8,10 @@ MVP phase: manual invocation. Future: Celery Beat scheduling.
 import os
 import time
 from pathlib import Path
-from typing import Optional
 
 from celery import shared_task
 
-from core.logging.context import set_task_context, clear_task_context
-
+from core.logging.context import clear_task_context, set_task_context
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -32,6 +30,7 @@ def _get_tmp_dir() -> Path:
 # Tasks
 # ---------------------------------------------------------------------------
 
+
 @shared_task(
     name="maintenance.cleanup_temp_files",
     bind=True,
@@ -40,8 +39,8 @@ def _get_tmp_dir() -> Path:
 )
 def cleanup_expired_temp_files(
     self,
-    max_age_hours: Optional[int] = None,
-    dry_run: Optional[bool] = None,
+    max_age_hours: int | None = None,
+    dry_run: bool | None = None,
 ) -> dict:
     """Delete temp files older than max_age_hours.
 
@@ -90,8 +89,8 @@ def cleanup_expired_temp_files(
 )
 def cleanup_failed_uploads(
     self,
-    max_age_hours: Optional[int] = None,
-    dry_run: Optional[bool] = None,
+    max_age_hours: int | None = None,
+    dry_run: bool | None = None,
 ) -> dict:
     """Remove incomplete / failed upload artifacts.
 
@@ -142,15 +141,14 @@ def cleanup_failed_uploads(
 )
 def cleanup_old_task_results(
     self,
-    max_age_hours: Optional[int] = None,
-    dry_run: Optional[bool] = None,
+    max_age_hours: int | None = None,
+    dry_run: bool | None = None,
 ) -> dict:
     """Purge expired Celery result backend entries.
 
     The Celery result backend is NOT for long-term artifact storage.
     This task removes entries older than max_age_hours.
     """
-    max_age = max_age_hours or 168  # 7 days default
     is_dry = dry_run if dry_run is not None else DRY_RUN
 
     # Celery result expiry is handled by the result_expires config.
