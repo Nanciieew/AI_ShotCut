@@ -1,11 +1,54 @@
 """
-Celery tasks for final result assembly.
+Celery tasks for final result assembly and pipeline completion.
 
-Collects all intermediate artifacts and produces the final unified
-output: final_result.json.
+Handles:
+  - final.pipeline_complete: marks the overall Task as SUCCEEDED
+  - final.assemble: collects artifacts and produces final_result.json (stub)
 """
 
+import os
+from datetime import datetime, timezone
+
 from workers.celery_app import app
+from core.database.session_sync import get_sync_session
+from core.database.repositories import TaskRepository
+from core.logging.context import set_task_context, clear_task_context
+from core.media.exceptions import NonRetryableTaskError
+
+
+@app.task(name="final.pipeline_complete", bind=True, max_retries=1)
+def pipeline_complete(self, task_id: str, video_id: str) -> dict:
+    """Finalize the pipeline — mark the overall Task as SUCCEEDED.
+
+    This is the ONLY task that sets the Task status to SUCCEEDED.
+    All intermediate tasks (normalize, detect, extract_keyframes, etc.)
+    only update their ModelRun and progress — never the Task status.
+
+    Parameters
+    ----------
+    task_id : str
+        App-level task identifier.
+    video_id : str
+        Video that was processed.
+    """
+    set_task_context(task_id=task_id, video_id=video_id, model="pipeline_finalizer")
+
+    with get_sync_session() as session:
+        task_repo = TaskRepository(session)
+
+        task_repo.update_status(task_id, "SUCCEEDED")
+        task_repo.update_progress(task_id, 100, stage="completed")
+        session.commit()
+
+    clear_task_context()
+
+    return {
+        "task_id": task_id,
+        "video_id": video_id,
+        "status": "SUCCEEDED",
+        "stage": "completed",
+        "message": "Pipeline completed successfully",
+    }
 
 
 @app.task(name="final.assemble", bind=True, max_retries=1)
