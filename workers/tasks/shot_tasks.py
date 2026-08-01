@@ -11,19 +11,18 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from workers.celery_app import app
-from core.database.session_sync import get_sync_session
+from core.artifacts import ArtifactProducer
+from core.artifacts.writer import ArtifactWriter
+from core.database.models import ModelRun, Shot
 from core.database.repositories import (
+    ArtifactRepository,
     TaskRepository,
     VideoRepository,
-    ArtifactRepository,
 )
-from core.database.models import ModelRun, Shot
-from core.artifacts.writer import ArtifactWriter
-from core.artifacts import ArtifactProducer
-from core.logging.context import set_task_context, clear_task_context
+from core.database.session_sync import get_sync_session
+from core.logging.context import clear_task_context, set_task_context
 from core.media.exceptions import NonRetryableTaskError
-
+from workers.celery_app import app
 
 # ---------------------------------------------------------------------------
 # Adapter registry — maps model_name → Adapter class
@@ -33,6 +32,7 @@ _ADAPTER_REGISTRY: dict[str, type] = {}
 
 try:
     from models.omnishotcut.adapter import OmniShotCutAdapter
+
     _ADAPTER_REGISTRY["omnishotcut"] = OmniShotCutAdapter
 except ImportError:
     pass
@@ -53,17 +53,19 @@ def _get_adapter_class(model_name: str):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _resolve_uri(uri: str, storage_root: str) -> str:
     """Convert storage:// URI to local absolute path."""
     prefix = "storage://"
     if uri.startswith(prefix):
-        return os.path.join(storage_root, uri[len(prefix):])
+        return os.path.join(storage_root, uri[len(prefix) :])
     return uri
 
 
 # ---------------------------------------------------------------------------
 # Task
 # ---------------------------------------------------------------------------
+
 
 @app.task(name="shot.detect", bind=True, max_retries=2)
 def detect_shots(
@@ -113,7 +115,8 @@ def detect_shots(
         if not normalized_uri:
             clear_task_context()
             raise NonRetryableTaskError(
-                "[NOT_NORMALIZED] Video has no normalized_uri. Run normalize_video first.")
+                "[NOT_NORMALIZED] Video has no normalized_uri. Run normalize_video first."
+            )
 
         video_path = _resolve_uri(normalized_uri, storage_root)
         if not os.path.exists(video_path):
@@ -170,7 +173,11 @@ def detect_shots(
             "task_id": task_id,
             "video_id": video_id,
             "model": {"name": model_name, "version": adapter.version},
-            "input": {"video_uri": f"storage://{normalized_uri[len('storage://'):]}" if normalized_uri.startswith("storage://") else normalized_uri},
+            "input": {
+                "video_uri": f"storage://{normalized_uri[len('storage://') :]}"
+                if normalized_uri.startswith("storage://")
+                else normalized_uri
+            },
             "parameters": {"mode": "clean_shot"},
         }
 
@@ -195,7 +202,8 @@ def detect_shots(
             clear_task_context()
             raise NonRetryableTaskError(
                 f"[{error_info.get('code', 'INFERENCE_FAILED')}] "
-                + error_info.get('message', 'Unknown inference error'))
+                + error_info.get("message", "Unknown inference error")
+            )
 
     except Exception as e:
         with get_sync_session() as session:
@@ -261,7 +269,9 @@ def detect_shots(
         session.commit()
 
     project_id = video.project_id if video else "default"
-    artifact_base = f"projects/{project_id}/videos/{video_id}/artifacts/{model_name}/{adapter.version}"
+    artifact_base = (
+        f"projects/{project_id}/videos/{video_id}/artifacts/{model_name}/{adapter.version}"
+    )
     shots_rel = f"{artifact_base}/shots.json"
 
     producer = ArtifactProducer(

@@ -7,6 +7,7 @@ MUST be executed as Celery tasks, never synchronously in an HTTP request.
 """
 
 import os
+
 from celery import Celery
 
 _app: Celery | None = None

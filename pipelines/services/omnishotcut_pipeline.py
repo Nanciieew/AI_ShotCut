@@ -13,31 +13,26 @@ Per §19: do NOT create separate LocalPipeline and DockerPipeline.
 
 import hashlib
 import json
-import os
 import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
-from core.media.schemas import FFprobeResult, NormalizationConfig, NormalizationResult
-from core.media.ffprobe import probe_video, run_ffprobe
-from core.media.ffmpeg import build_normalize_command, run_ffmpeg, get_ffmpeg_version
-from core.media.normalization import validate_normalization, normalize_video_file
-from core.media.exceptions import (
-    MediaError,
-    FFprobeError,
-    FFmpegError,
-    NormalizationError,
-    NormalizationValidationError,
-)
-from core.artifacts.writer import ArtifactWriter
 from core.artifacts import ArtifactProducer
-
+from core.artifacts.writer import ArtifactWriter
+from core.media.exceptions import (
+    FFmpegError,
+    FFprobeError,
+)
+from core.media.ffmpeg import build_normalize_command, get_ffmpeg_version, run_ffmpeg
+from core.media.ffprobe import run_ffprobe
+from core.media.normalization import validate_normalization
+from core.media.schemas import FFprobeResult, NormalizationConfig
 
 # ---------------------------------------------------------------------------
 # Result types
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class PipelineResult:
@@ -45,6 +40,7 @@ class PipelineResult:
 
     Small, serializable — no video data, no tensors, no full shot arrays.
     """
+
     status: str  # SUCCEEDED, FAILED
     video_id: str
     source_artifact_id: str = ""
@@ -59,8 +55,8 @@ class PipelineResult:
     warnings: list[str] = field(default_factory=list)
 
     # Probe summary (small)
-    probe_before: Optional[dict] = None
-    probe_after: Optional[dict] = None
+    probe_before: dict | None = None
+    probe_after: dict | None = None
     ffmpeg_version: str = ""
     input_sha256: str = ""
     normalized_sha256: str = ""
@@ -76,11 +72,12 @@ class PipelineResult:
 # Pipeline Service
 # ---------------------------------------------------------------------------
 
+
 def run_omnishotcut_pipeline(
     *,
     video_id: str,
     source_video_path: Path,
-    source_artifact_id: Optional[str] = None,
+    source_artifact_id: str | None = None,
     output_root: Path,
     mode: str = "clean_shot",
     extract_keyframes: bool = False,
@@ -133,8 +130,26 @@ def run_omnishotcut_pipeline(
     norm_version = "1.0.0"
     model_version = "0.1.0"
 
-    norm_dir = output_root / "projects" / project_id / "videos" / video_id / "artifacts" / "video_normalization" / norm_version
-    shot_dir = output_root / "projects" / project_id / "videos" / video_id / "artifacts" / "omnishotcut" / model_version
+    norm_dir = (
+        output_root
+        / "projects"
+        / project_id
+        / "videos"
+        / video_id
+        / "artifacts"
+        / "video_normalization"
+        / norm_version
+    )
+    shot_dir = (
+        output_root
+        / "projects"
+        / project_id
+        / "videos"
+        / video_id
+        / "artifacts"
+        / "omnishotcut"
+        / model_version
+    )
 
     norm_dir.mkdir(parents=True, exist_ok=True)
     shot_dir.mkdir(parents=True, exist_ok=True)
@@ -248,49 +263,52 @@ def run_omnishotcut_pipeline(
     )
 
     normalize_manifest_path = norm_dir / "normalized_video.manifest.json"
-    _write_manifest(normalize_manifest_path, {
-        "schema_version": "1.0",
-        "artifact_type": "normalized_video",
-        "artifact_id": norm_artifact_id,
-        "video_id": video_id,
-        "source_artifact_id": result.source_artifact_id,
-        "producer": {
-            "name": "ffmpeg_normalizer",
-            "version": norm_version,
-            "ffmpeg_version": result.ffmpeg_version,
+    _write_manifest(
+        normalize_manifest_path,
+        {
+            "schema_version": "1.0",
+            "artifact_type": "normalized_video",
+            "artifact_id": norm_artifact_id,
+            "video_id": video_id,
+            "source_artifact_id": result.source_artifact_id,
+            "producer": {
+                "name": "ffmpeg_normalizer",
+                "version": norm_version,
+                "ffmpeg_version": result.ffmpeg_version,
+            },
+            "normalization": {
+                "container": config.container,
+                "video_codec": config.video_codec,
+                "pixel_format": config.pixel_format,
+                "frame_rate_mode": config.frame_rate_mode,
+                "audio_codec": config.audio_codec,
+                "audio_sample_rate": config.audio_sample_rate,
+            },
+            "input": {
+                "uri": str(source_video_path),
+                "sha256": result.input_sha256,
+            },
+            "output": {
+                "uri": str(normalized_path),
+                "sha256": result.normalized_sha256,
+                "size_bytes": normalized_path.stat().st_size,
+            },
+            "probe_before_uri": str(norm_dir / "probe_before.json"),
+            "probe_after_uri": str(norm_dir / "probe_after.json"),
+            "input_fps": {
+                "fps_num": probe_before.fps_num,
+                "fps_den": probe_before.fps_den,
+                "frame_rate_mode": probe_before.frame_rate_mode,
+            },
+            "output_fps": {
+                "fps_num": probe_after.fps_num,
+                "fps_den": probe_after.fps_den,
+            },
+            "duration_delta_ms": abs(probe_before.duration_ms - probe_after.duration_ms),
+            "validation_passed": True,
+            "validation_errors": [],
         },
-        "normalization": {
-            "container": config.container,
-            "video_codec": config.video_codec,
-            "pixel_format": config.pixel_format,
-            "frame_rate_mode": config.frame_rate_mode,
-            "audio_codec": config.audio_codec,
-            "audio_sample_rate": config.audio_sample_rate,
-        },
-        "input": {
-            "uri": str(source_video_path),
-            "sha256": result.input_sha256,
-        },
-        "output": {
-            "uri": str(normalized_path),
-            "sha256": result.normalized_sha256,
-            "size_bytes": normalized_path.stat().st_size,
-        },
-        "probe_before_uri": str(norm_dir / "probe_before.json"),
-        "probe_after_uri": str(norm_dir / "probe_after.json"),
-        "input_fps": {
-            "fps_num": probe_before.fps_num,
-            "fps_den": probe_before.fps_den,
-            "frame_rate_mode": probe_before.frame_rate_mode,
-        },
-        "output_fps": {
-            "fps_num": probe_after.fps_num,
-            "fps_den": probe_after.fps_den,
-        },
-        "duration_delta_ms": abs(probe_before.duration_ms - probe_after.duration_ms),
-        "validation_passed": True,
-        "validation_errors": [],
-    })
+    )
 
     result.normalized_artifact_id = norm_artifact_id
     result.normalized_artifact_uri = str(normalized_path)
@@ -298,6 +316,7 @@ def run_omnishotcut_pipeline(
     # --- 7-8. OmniShotCut inference ---
     try:
         from models.omnishotcut.adapter import OmniShotCutAdapter
+
         adapter = OmniShotCutAdapter()
         adapter.load()
     except Exception as e:
@@ -384,14 +403,21 @@ def run_omnishotcut_pipeline(
     if extract_keyframes:
         print("  [Keyframes] Extracting 25%/50%/75% keyframes per shot ...")
         try:
-            from pipelines.services.keyframe_service import run_keyframe_extraction
             import os as _os
+
+            from pipelines.services.keyframe_service import run_keyframe_extraction
 
             storage_root = str(output_root)
             normalized_path = _os.path.join(
                 storage_root,
-                "projects", project_id, "videos", video_id,
-                "artifacts", "video_normalization", "1.0.0", "normalized.mp4",
+                "projects",
+                project_id,
+                "videos",
+                video_id,
+                "artifacts",
+                "video_normalization",
+                "1.0.0",
+                "normalized.mp4",
             )
 
             keyframe_result = run_keyframe_extraction(
@@ -414,9 +440,11 @@ def run_omnishotcut_pipeline(
                 result.keyframes_artifact_uri = keyframe_result.summary_artifact_uri
                 result.keyframe_image_count = keyframe_result.unique_image_count
                 shot_count = keyframe_result.shot_count
-                print(f"  [Keyframes] Done: {keyframe_result.unique_image_count} "
-                      f"images for {shot_count} shots "
-                      f"({keyframe_result.runtime_ms}ms)")
+                print(
+                    f"  [Keyframes] Done: {keyframe_result.unique_image_count} "
+                    f"images for {shot_count} shots "
+                    f"({keyframe_result.runtime_ms}ms)"
+                )
             else:
                 result.warnings.append(
                     f"Keyframe extraction failed: "
@@ -438,6 +466,7 @@ def run_omnishotcut_pipeline(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _new_id() -> str:
     return uuid.uuid4().hex[:16]
@@ -464,5 +493,6 @@ def _write_json_atomic(path: Path, data: dict) -> None:
 
 def _write_manifest(path: Path, data: dict) -> None:
     from datetime import datetime, timezone
+
     data["created_at"] = datetime.now(timezone.utc).isoformat()
     _write_json_atomic(path, data)

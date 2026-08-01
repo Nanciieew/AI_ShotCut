@@ -2,7 +2,6 @@
 Artifact repository — synchronous CRUD for Celery workers.
 """
 
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -24,7 +23,7 @@ class ArtifactRepository:
         uri: str,
         format: str,
         schema_version: str = "1.0",
-        sha256: Optional[str] = None,
+        sha256: str | None = None,
     ) -> Artifact:
         artifact = Artifact(
             artifact_id=artifact_id,
@@ -39,7 +38,7 @@ class ArtifactRepository:
         self._session.add(artifact)
         return artifact
 
-    def get(self, artifact_id: str) -> Optional[Artifact]:
+    def get(self, artifact_id: str) -> Artifact | None:
         return self._session.get(Artifact, artifact_id)
 
     def list_by_video(self, video_id: str) -> list[Artifact]:
@@ -56,7 +55,7 @@ class ArtifactRepository:
         video_id: str,
         artifact_type: str,
         model_name: str,
-    ) -> Optional[Artifact]:
+    ) -> Artifact | None:
         """Get the artifact produced by a specific task's model run.
 
         Joins Artifact → ModelRun on run_id, filters by task_id + model_name.

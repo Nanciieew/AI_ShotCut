@@ -22,9 +22,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Run OmniShotCut pipeline locally"
-    )
+    parser = argparse.ArgumentParser(description="Run OmniShotCut pipeline locally")
     parser.add_argument(
         "--video",
         required=True,
@@ -105,10 +103,12 @@ def main() -> int:
 
     if result.probe_before:
         p = result.probe_before
-        print(f"  [Probe Before]")
+        print("  [Probe Before]")
         print(f"    Codec:         {p.get('video_codec')}")
         print(f"    Resolution:    {p.get('width')}x{p.get('height')}")
-        print(f"    FPS:           {p.get('fps_num')}/{p.get('fps_den')} = {p.get('fps_num', 0) / max(p.get('fps_den', 1), 1):.3f}")
+        print(
+            f"    FPS:           {p.get('fps_num')}/{p.get('fps_den')} = {p.get('fps_num', 0) / max(p.get('fps_den', 1), 1):.3f}"
+        )
         print(f"    Frame mode:    {p.get('frame_rate_mode')}")
         print(f"    Duration:      {p.get('duration_ms')}ms")
         print(f"    Has audio:     {p.get('has_audio')}")
@@ -116,7 +116,7 @@ def main() -> int:
 
     if result.probe_after:
         p = result.probe_after
-        print(f"  [Probe After]")
+        print("  [Probe After]")
         print(f"    Codec:         {p.get('video_codec')}")
         print(f"    Pixel fmt:     {p.get('pixel_format')}")
         print(f"    FPS:           {p.get('fps_num')}/{p.get('fps_den')}")
@@ -124,7 +124,7 @@ def main() -> int:
         print(f"    Container:     {p.get('container_format')}")
         print()
 
-    print(f"  [Normalization]")
+    print("  [Normalization]")
     print(f"    FFmpeg:        {result.ffmpeg_version}")
     print(f"    Input SHA256:  {result.input_sha256}")
     print(f"    Output SHA256: {result.normalized_sha256}")
@@ -132,7 +132,7 @@ def main() -> int:
     print(f"    Artifact URI:  {result.normalized_artifact_uri}")
     print()
 
-    print(f"  [OmniShotCut]")
+    print("  [OmniShotCut]")
     print(f"    Shot count:    {result.shot_count}")
     print(f"    Artifact ID:   {result.shots_artifact_id}")
     print(f"    Artifact URI:  {result.shots_artifact_uri}")
@@ -140,13 +140,13 @@ def main() -> int:
     print()
 
     if result.keyframes_artifact_uri:
-        print(f"  [Keyframes]")
+        print("  [Keyframes]")
         print(f"    Artifact URI:  {result.keyframes_artifact_uri}")
         print(f"    Image count:   {result.keyframe_image_count or 0}")
         print()
 
     if result.warnings:
-        print(f"  [Warnings]")
+        print("  [Warnings]")
         for w in result.warnings:
             print(f"    - {w}")
         print()

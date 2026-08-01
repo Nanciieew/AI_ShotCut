@@ -1,4 +1,4 @@
-﻿"""
+"""
 Celery task for keyframe extraction.
 
 Runs after shot.detect in the pipeline chain. Extracts 3 keyframes
@@ -14,37 +14,35 @@ import os
 import time
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
-from workers.celery_app import app
-from core.database.session_sync import get_sync_session
+from core.database.models import ModelRun
 from core.database.repositories import (
+    ArtifactRepository,
     TaskRepository,
     VideoRepository,
-    ArtifactRepository,
 )
-from core.database.models import ModelRun
-from core.artifacts.writer import ArtifactWriter
-from core.artifacts import ArtifactProducer
-from core.logging.context import set_task_context, clear_task_context
-from core.media.exceptions import NonRetryableTaskError, KeyframeExtractionError
-
+from core.database.session_sync import get_sync_session
+from core.logging.context import clear_task_context, set_task_context
+from core.media.exceptions import KeyframeExtractionError, NonRetryableTaskError
+from workers.celery_app import app
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _resolve_uri(uri: str, storage_root: str) -> str:
     """Convert storage:// URI to local absolute path."""
     prefix = "storage://"
     if uri.startswith(prefix):
-        return os.path.join(storage_root, uri[len(prefix):])
+        return os.path.join(storage_root, uri[len(prefix) :])
     return uri
 
 
 # ---------------------------------------------------------------------------
 # Task
 # ---------------------------------------------------------------------------
+
 
 @app.task(name="video.extract_keyframes", bind=True, max_retries=1)
 def extract_keyframes(self, task_id: str, video_id: str) -> dict:
@@ -68,7 +66,6 @@ def extract_keyframes(self, task_id: str, video_id: str) -> dict:
     set_task_context(task_id=task_id, video_id=video_id, model="ffmpeg_keyframes")
 
     storage_root = os.getenv("STORAGE_ROOT", "./data")
-    writer = ArtifactWriter(storage_root)
 
     # --- 1. Guard: task not already FAILED ---
     with get_sync_session() as session:
@@ -88,24 +85,19 @@ def extract_keyframes(self, task_id: str, video_id: str) -> dict:
         video = video_repo.get(video_id)
         if video is None:
             clear_task_context()
-            raise NonRetryableTaskError(
-                f"[VIDEO_NOT_FOUND] Video {video_id} not in DB"
-            )
+            raise NonRetryableTaskError(f"[VIDEO_NOT_FOUND] Video {video_id} not in DB")
 
         normalized_uri = video.normalized_uri
         if not normalized_uri:
             clear_task_context()
             raise NonRetryableTaskError(
-                "[NOT_NORMALIZED] Video has no normalized_uri. "
-                "Run normalize_video first."
+                "[NOT_NORMALIZED] Video has no normalized_uri. Run normalize_video first."
             )
 
         video_path = _resolve_uri(normalized_uri, storage_root)
         if not os.path.exists(video_path):
             clear_task_context()
-            raise NonRetryableTaskError(
-                f"[FILE_NOT_FOUND] Normalized video missing: {video_path}"
-            )
+            raise NonRetryableTaskError(f"[FILE_NOT_FOUND] Normalized video missing: {video_path}")
 
         # Resolve shots artifact by task_id (same pipeline run)
         shots_artifact = artifact_repo.get_artifact_for_task(
@@ -139,7 +131,7 @@ def extract_keyframes(self, task_id: str, video_id: str) -> dict:
 
     # --- 3. Load shots data ---
     try:
-        with open(shots_path, "r", encoding="utf-8") as f:
+        with open(shots_path, encoding="utf-8") as f:
             shots_data = json.load(f)
     except (json.JSONDecodeError, OSError) as e:
         clear_task_context()
@@ -168,13 +160,14 @@ def extract_keyframes(self, task_id: str, video_id: str) -> dict:
     # --- 5. Get video frame metadata ---
     fps_num = video.fps_num or 0
     fps_den = video.fps_den or 1
-    frame_count = getattr(video, 'frame_count', 0) or 0
+    frame_count = getattr(video, "frame_count", 0) or 0
     video_width = video.width or 0
     video_height = video.height or 0
 
     if fps_num <= 0 or fps_den <= 0:
         # Fallback: probe the video
         from core.media.ffprobe import run_ffprobe
+
         try:
             probe = run_ffprobe(str(video_path))
             fps_num = probe.fps_num
@@ -184,12 +177,11 @@ def extract_keyframes(self, task_id: str, video_id: str) -> dict:
             video_height = probe.height
         except Exception:
             clear_task_context()
-            raise NonRetryableTaskError(
-                "[NO_FPS] Cannot determine FPS from DB or probe"
-            )
+            raise NonRetryableTaskError("[NO_FPS] Cannot determine FPS from DB or probe")
 
     # --- 6. Load config ---
     from core.config import get_settings
+
     settings = get_settings()
 
     # --- 7. Run extraction ---
@@ -206,9 +198,7 @@ def extract_keyframes(self, task_id: str, video_id: str) -> dict:
             video_width=video_width,
             video_height=video_height,
             shots_artifact_id=shots_artifact.artifact_id,
-            normalized_video_artifact_id=(
-                norm_artifact.artifact_id if norm_artifact else ""
-            ),
+            normalized_video_artifact_id=(norm_artifact.artifact_id if norm_artifact else ""),
             video_id=video_id,
             run_id=run_id,
             output_root=storage_root,
@@ -255,9 +245,7 @@ def extract_keyframes(self, task_id: str, video_id: str) -> dict:
                 mr.finished_at = datetime.now(timezone.utc)
             session.commit()
         clear_task_context()
-        raise NonRetryableTaskError(
-            f"[{service_result.error_code}] {service_result.error_message}"
-        )
+        raise NonRetryableTaskError(f"[{service_result.error_code}] {service_result.error_message}")
 
     # --- 8. Create Artifact DB record + finalize ---
     with get_sync_session() as session:

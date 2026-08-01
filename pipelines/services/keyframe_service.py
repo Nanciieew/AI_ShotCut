@@ -1,4 +1,4 @@
-﻿"""Keyframe extraction service — shared orchestration.
+"""Keyframe extraction service — shared orchestration.
 
 Called by both the Celery task (workers/tasks/keyframe_tasks.py) and
 the local pipeline (pipelines/services/omnishotcut_pipeline.py).
@@ -8,32 +8,27 @@ Per CLAUDE.md §19: do NOT create separate local/Docker implementations.
 
 from __future__ import annotations
 
-import json
-import os
-import time
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
+from core.artifacts import ArtifactInputRef, ArtifactProducer
 from core.artifacts.writer import ArtifactWriter
-from core.artifacts import ArtifactProducer, ArtifactInputRef
+from core.media.exceptions import KeyframeExtractionError
 from core.media.keyframes import (
+    KeyframeTarget,
     compute_keyframe_targets,
     extract_keyframes,
-    KeyframeTarget,
-    ExtractionResult,
 )
-from core.media.exceptions import KeyframeExtractionError
-
 
 # ---------------------------------------------------------------------------
 # Result type
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class KeyframeServiceResult:
     """Result from the keyframe extraction service."""
+
     status: str  # "SUCCEEDED" | "FAILED"
     summary_artifact_id: str = ""
     summary_artifact_uri: str = ""
@@ -51,6 +46,7 @@ class KeyframeServiceResult:
 # ---------------------------------------------------------------------------
 # Service
 # ---------------------------------------------------------------------------
+
 
 def run_keyframe_extraction(
     *,
@@ -105,7 +101,6 @@ def run_keyframe_extraction(
     -------
     KeyframeServiceResult
     """
-    t_start = time.monotonic()
     result = KeyframeServiceResult(status="FAILED")
     writer = ArtifactWriter(output_root)
 
@@ -135,17 +130,12 @@ def run_keyframe_extraction(
     producer_version = "1.0.0"
 
     artifact_base = (
-        f"projects/{{project}}/videos/{video_id}/"
-        f"artifacts/{producer_name}/{producer_version}"
+        f"projects/{{project}}/videos/{video_id}/artifacts/{producer_name}/{producer_version}"
     )
-    # Placeholder project — filled at write time
-    relative_dir = artifact_base.format(project="_")
-    # Actually build the real path
-    # We need the project_id — extract from shots_data or use "default"
+    # Use "default" as project_id for keyframe artifacts
     project_id = "default"  # keyframe service uses default project
     artifact_base = (
-        f"projects/{project_id}/videos/{video_id}/"
-        f"artifacts/{producer_name}/{producer_version}"
+        f"projects/{project_id}/videos/{video_id}/artifacts/{producer_name}/{producer_version}"
     )
 
     images_dir = Path(output_root) / artifact_base / "images"
@@ -187,15 +177,18 @@ def run_keyframe_extraction(
         start = s["start_frame"]
         end = s["end_frame_exclusive"]
         for num, den in [(1, 4), (1, 2), (3, 4)]:
-            from core.media.keyframes import select_frame, frame_to_timestamp_ms
+            from core.media.keyframes import frame_to_timestamp_ms, select_frame
+
             fnum = select_frame(start, end, num, den)
             ts = frame_to_timestamp_ms(fnum, fps_num, fps_den)
-            raw_per_shot[s["shot_id"]].append({
-                "frame_number": fnum,
-                "position_num": num,
-                "position_den": den,
-                "timestamp_ms": ts,
-            })
+            raw_per_shot[s["shot_id"]].append(
+                {
+                    "frame_number": fnum,
+                    "position_num": num,
+                    "position_den": den,
+                    "timestamp_ms": ts,
+                }
+            )
 
     # Count deduped samples
     total_requested = len(shots_list) * 3
@@ -204,9 +197,7 @@ def run_keyframe_extraction(
     shots_output: list[dict] = []
     for s in shots_list:
         shot_targets = shot_map.get(s["shot_id"], [])
-        target_by_frame: dict[int, KeyframeTarget] = {
-            t.frame_number: t for t in shot_targets
-        }
+        target_by_frame: dict[int, KeyframeTarget] = {t.frame_number: t for t in shot_targets}
         raw_samples = raw_per_shot.get(s["shot_id"], [])
 
         samples: list[dict] = []
@@ -214,35 +205,42 @@ def run_keyframe_extraction(
             t = target_by_frame.get(raw["frame_number"])
             if t is not None:
                 image_rel = f"{artifact_base}/images/{t.filename}"
-                samples.append({
-                    "position_num": raw["position_num"],
-                    "position_den": raw["position_den"],
-                    "frame_number": t.frame_number,
-                    "timestamp_ms": t.timestamp_ms,
-                    "decoded_pts_ms": t.decoded_pts_ms,
-                    "uri": f"storage://{image_rel}",
-                    "sha256": t.sha256,
-                    "size_bytes": t.size_bytes,
-                    "duplicated_reference": False,
-                })
+                samples.append(
+                    {
+                        "position_num": raw["position_num"],
+                        "position_den": raw["position_den"],
+                        "frame_number": t.frame_number,
+                        "timestamp_ms": t.timestamp_ms,
+                        "decoded_pts_ms": t.decoded_pts_ms,
+                        "uri": f"storage://{image_rel}",
+                        "sha256": t.sha256,
+                        "size_bytes": t.size_bytes,
+                        "duplicated_reference": False,
+                    }
+                )
             else:
                 # This sample was deduped — point to the closest saved target
                 # (same frame_number was de-duplicated globally)
                 # Find the target that was actually saved for this frame
-                samples.append({
-                    "position_num": raw["position_num"],
-                    "position_den": raw["position_den"],
-                    "frame_number": raw["frame_number"],
-                    "timestamp_ms": raw["timestamp_ms"],
-                    "decoded_pts_ms": None,
-                    "uri": None,
-                    "sha256": "",
-                    "size_bytes": 0,
-                    "duplicated_reference": True,
-                    "note": "Frame not extracted (same frame as another sample, or decode miss)",
-                })
+                samples.append(
+                    {
+                        "position_num": raw["position_num"],
+                        "position_den": raw["position_den"],
+                        "frame_number": raw["frame_number"],
+                        "timestamp_ms": raw["timestamp_ms"],
+                        "decoded_pts_ms": None,
+                        "uri": None,
+                        "sha256": "",
+                        "size_bytes": 0,
+                        "duplicated_reference": True,
+                        "note": (
+                            "Frame not extracted "
+                            "(same frame as another sample, or decode miss)"
+                        ),
+                    }
+                )
 
-        # Mark duplicates: when multiple samples share the same frame_number, only one is the "original"
+        # Mark duplicates: samples sharing same frame_number → one "original"
         frame_uris: dict[int, str] = {}
         for smp in samples:
             fn = smp["frame_number"]
@@ -260,23 +258,27 @@ def run_keyframe_extraction(
                         smp["decoded_pts_ms"] = t.decoded_pts_ms
                         break
 
-        shots_output.append({
-            "shot_id": s["shot_id"],
-            "index": s.get("index", 0),
-            "start_ms": s.get("start_ms", 0),
-            "end_ms": s.get("end_ms", 0),
-            "samples": samples,
-        })
+        shots_output.append(
+            {
+                "shot_id": s["shot_id"],
+                "index": s.get("index", 0),
+                "start_ms": s.get("start_ms", 0),
+                "end_ms": s.get("end_ms", 0),
+                "samples": samples,
+            }
+        )
 
     # Count dedup
     dedup_count = sum(
-        1 for shot in shots_output
+        1
+        for shot in shots_output
         for smp in shot["samples"]
         if smp.get("duplicated_reference", False)
     )
 
     # --- 4. Write summary artifact ---
     import av as _av
+
     summary_data = {
         "schema_version": "1.0",
         "video_id": video_id,

@@ -1,4 +1,4 @@
-﻿"""Keyframe extraction — single-pass PyAV decode + JPEG/PNG encode.
+"""Keyframe extraction — single-pass PyAV decode + JPEG/PNG encode.
 
 Pure media logic with no database or storage knowledge.
 Called by pipelines/services/keyframe_service.py and Celery tasks.
@@ -17,24 +17,21 @@ from __future__ import annotations
 
 import hashlib
 import io
-import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import av
 from PIL import Image
-
 
 # ---------------------------------------------------------------------------
 # Position constants — stored as fractions to avoid float imprecision
 # ---------------------------------------------------------------------------
 
 POSITIONS: tuple[tuple[int, int], ...] = (
-    (1, 4),   # 25%
-    (1, 2),   # 50%
-    (3, 4),   # 75%
+    (1, 4),  # 25%
+    (1, 2),  # 50%
+    (3, 4),  # 75%
 )
 
 
@@ -42,9 +39,11 @@ POSITIONS: tuple[tuple[int, int], ...] = (
 # Data types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class KeyframeTarget:
     """One frame to extract from the video."""
+
     frame_number: int
     timestamp_ms: int
     shot_id: str
@@ -55,12 +54,13 @@ class KeyframeTarget:
     saved: bool = False
     sha256: str = ""
     size_bytes: int = 0
-    decoded_pts_ms: Optional[int] = None
+    decoded_pts_ms: int | None = None
 
 
 @dataclass
 class ExtractionResult:
     """Result of a keyframe extraction run."""
+
     saved: list[KeyframeTarget] = field(default_factory=list)
     not_found: list[KeyframeTarget] = field(default_factory=list)
     runtime_ms: int = 0
@@ -70,6 +70,7 @@ class ExtractionResult:
 # ---------------------------------------------------------------------------
 # Target frame computation (integer arithmetic)
 # ---------------------------------------------------------------------------
+
 
 def select_frame(
     start_frame: int,
@@ -128,6 +129,7 @@ def frame_to_timestamp_ms(frame: int, fps_num: int, fps_den: int) -> int:
 # Target computation (per-shot → global sorted list)
 # ---------------------------------------------------------------------------
 
+
 def compute_keyframe_targets(
     shots: list[dict],
     fps_num: int,
@@ -172,11 +174,7 @@ def compute_keyframe_targets(
             frame = select_frame(start, end, num, den)
             ts = frame_to_timestamp_ms(frame, fps_num, fps_den)
 
-            filename = (
-                f"{s['shot_id']}_"
-                f"{num:03d}_{den:03d}."
-                f"jpg"
-            )
+            filename = f"{s['shot_id']}_{num:03d}_{den:03d}.jpg"
 
             target = KeyframeTarget(
                 frame_number=frame,
@@ -204,6 +202,7 @@ def compute_keyframe_targets(
 # ---------------------------------------------------------------------------
 # PyAV single-pass extraction
 # ---------------------------------------------------------------------------
+
 
 def extract_keyframes(
     video_path: str,
@@ -308,6 +307,7 @@ def extract_keyframes(
 # Internal: encode and write a single frame
 # ---------------------------------------------------------------------------
 
+
 def _save_target(
     frame: av.VideoFrame,
     target: KeyframeTarget,
@@ -329,6 +329,7 @@ def _save_target(
         # Log mismatches but continue (CFR normalization should prevent these)
         if abs(decoded_pts_ms - target.timestamp_ms) > frame_duration_ms:
             import structlog
+
             _log = structlog.get_logger(__name__)
             _log.warning(
                 "pts_mismatch",
