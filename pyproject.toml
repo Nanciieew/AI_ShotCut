@@ -46,6 +46,7 @@ exclude = [
     ".pytest_cache/",
     "alembic/versions/",
     "models/*/patches/",
+    "*.md",
 ]
 
 [tool.ruff.lint]
