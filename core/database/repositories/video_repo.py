@@ -2,11 +2,9 @@
 Video repository — synchronous CRUD for Celery workers.
 """
 
-from typing import Optional
-
 from sqlalchemy.orm import Session
 
-from core.database.models import Video, Project
+from core.database.models import Project, Video
 
 
 class VideoRepository:
@@ -36,7 +34,7 @@ class VideoRepository:
         self,
         video_id: str,
         project_id: str,
-        source_uri: Optional[str] = None,
+        source_uri: str | None = None,
     ) -> Video:
         video = Video(
             video_id=video_id,
@@ -46,22 +44,22 @@ class VideoRepository:
         self._session.add(video)
         return video
 
-    def get(self, video_id: str) -> Optional[Video]:
+    def get(self, video_id: str) -> Video | None:
         return self._session.get(Video, video_id)
 
     def update_metadata(
         self,
         video_id: str,
         *,
-        duration_ms: Optional[int] = None,
-        fps_num: Optional[int] = None,
-        fps_den: Optional[int] = None,
-        width: Optional[int] = None,
-        height: Optional[int] = None,
-        audio_sample_rate: Optional[int] = None,
-        normalized_uri: Optional[str] = None,
-        audio_uri: Optional[str] = None,
-    ) -> Optional[Video]:
+        duration_ms: int | None = None,
+        fps_num: int | None = None,
+        fps_den: int | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        audio_sample_rate: int | None = None,
+        normalized_uri: str | None = None,
+        audio_uri: str | None = None,
+    ) -> Video | None:
         """Update video technical metadata after normalization."""
         video = self.get(video_id)
         if video is None:

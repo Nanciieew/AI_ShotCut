@@ -9,16 +9,14 @@ Provides:
 
 import os
 import shutil
-from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from apps.api.routes import videos, tasks, results
+from apps.api.routes import results, tasks, videos
 from core.database.session import check_db_connection
-from core.logging.middleware import RequestLoggingMiddleware
 from core.logging.config import configure_logging
-
+from core.logging.middleware import RequestLoggingMiddleware
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -34,6 +32,7 @@ configure_logging(
 # Application factory
 # ---------------------------------------------------------------------------
 
+
 def create_app() -> FastAPI:
     """Build and configure the FastAPI application."""
 
@@ -41,7 +40,9 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="Movie Analysis Platform",
-        description="Multi-model video analysis backend — shot detection, scene merging, scene scoring.",
+        description=(
+            "Multi-model video analysis backend — shot detection, scene merging, scene scoring."
+        ),
         version="0.1.0",
         docs_url="/docs" if debug else None,
         redoc_url="/redoc" if debug else None,
@@ -87,6 +88,7 @@ def create_app() -> FastAPI:
         # Redis
         try:
             from workers.celery_app import app as celery_app
+
             conn = celery_app.broker_connection()
             conn.ensure_connection(max_retries=1, timeout=3)
             checks["redis"] = True
@@ -97,6 +99,7 @@ def create_app() -> FastAPI:
         # Celery Broker ping
         try:
             from workers.celery_app import app as celery_app
+
             insp = celery_app.control.inspect()
             stats = insp.ping()
             checks["celery_broker"] = bool(stats)
@@ -118,7 +121,6 @@ def create_app() -> FastAPI:
         checks["ffmpeg"] = shutil.which("ffmpeg") is not None
 
         all_ok = all(v is True for v in checks.values())
-        status_code = 200 if all_ok else 503
         return {"status": "ok" if all_ok else "degraded", "checks": checks}
 
     # --- Health: Legacy ---

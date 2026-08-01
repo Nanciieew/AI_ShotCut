@@ -150,7 +150,7 @@ class ArtifactWriter:
     def _count_records(content: bytes, artifact_type: str) -> int | None:
         """Try to count records for JSON artifacts only."""
         # Only text-based artifacts; skip binary (mp4, wav, npy, npz, etc.)
-        _TEXT_TYPES = {
+        _text_types = {
             "shots",
             "subtitle_segments",
             "scene_boundaries",
@@ -163,7 +163,7 @@ class ArtifactWriter:
             "scene_evidence",
             "shot_keyframes",
         }
-        if artifact_type not in _TEXT_TYPES:
+        if artifact_type not in _text_types:
             return None
         try:
             data = json.loads(content)

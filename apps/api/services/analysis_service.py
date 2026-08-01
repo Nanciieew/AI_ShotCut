@@ -62,14 +62,14 @@ async def submit_full_pipeline(
 
         # Create video record + original artifact
         source_uri = f"storage://projects/{proj_id}/videos/{vid}/source/{video_path}"
-        video = video_repo.create(
+        video_repo.create(
             video_id=vid,
             project_id=proj_id,
             source_uri=source_uri,
         )
 
         # Create task
-        task = task_repo.create(
+        task_repo.create(
             task_id=task_id,
             video_id=vid,
             task_type="omnishotcut_pipeline",

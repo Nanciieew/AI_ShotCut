@@ -6,7 +6,6 @@ groups, and the top-level keyframe summary artifact.
 Per CLAUDE.md §5: all cross-module data uses schemas/ Pydantic models.
 """
 
-
 from pydantic import BaseModel, Field
 
 # ---------------------------------------------------------------------------
@@ -70,17 +69,14 @@ class KeyframeSummary(BaseModel):
     source: dict = Field(
         ...,
         description=(
-            "{normalized_video_artifact_id, shots_artifact_id, "
-            "fps_num, fps_den, frame_count}"
+            "{normalized_video_artifact_id, shots_artifact_id, fps_num, fps_den, frame_count}"
         ),
     )
     format: dict = Field(
         ...,
         description="{encoding, quality, max_long_side, width, height}",
     )
-    shots: list[ShotKeyframes] = Field(
-        default_factory=list, description="Per-shot keyframe groups"
-    )
+    shots: list[ShotKeyframes] = Field(default_factory=list, description="Per-shot keyframe groups")
     metrics: dict = Field(
         default_factory=dict,
         description=(

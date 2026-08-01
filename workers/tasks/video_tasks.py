@@ -237,9 +237,9 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
     with open(normalized_abs, "rb") as f:
         norm_bytes = f.read()
     norm_sha256 = hashlib.sha256(norm_bytes).hexdigest()
-    norm_size = len(norm_bytes)
+    len(norm_bytes)
 
-    input_sha256 = probe_before.raw_json is not None and _sha256_file(source_path) or ""
+    probe_before.raw_json is not None and _sha256_file(source_path) or ""
 
     producer = ArtifactProducer(
         model_name="ffmpeg_normalizer",
@@ -249,7 +249,7 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
     )
 
     # Write normalized.mp4 artifact
-    norm_manifest = writer.write_bytes_artifact(
+    writer.write_bytes_artifact(
         relative_path=normalized_rel,
         content=norm_bytes,
         artifact_type="normalized_video",

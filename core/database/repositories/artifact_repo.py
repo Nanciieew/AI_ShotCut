@@ -2,7 +2,6 @@
 Artifact repository — synchronous CRUD for Celery workers.
 """
 
-
 from sqlalchemy.orm import Session
 
 from core.database.models import Artifact, ModelRun

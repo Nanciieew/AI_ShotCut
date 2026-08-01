@@ -15,27 +15,24 @@ import hashlib
 import json
 import os
 import time
-from pathlib import Path
-from typing import Optional
 
+from core.media.exceptions import (
+    NormalizationError,
+)
+from core.media.ffmpeg import build_normalize_command, get_ffmpeg_version, run_ffmpeg
+from core.media.ffprobe import probe_video
 from core.media.schemas import (
     FFprobeResult,
     NormalizationConfig,
     NormalizationResult,
-)
-from core.media.ffprobe import probe_video, run_ffprobe
-from core.media.ffmpeg import build_normalize_command, run_ffmpeg, get_ffmpeg_version
-from core.media.exceptions import (
-    NormalizationError,
-    NormalizationValidationError,
 )
 
 
 def normalize_video_file(
     input_path: str,
     output_dir: str,
-    input_sha256: Optional[str] = None,
-    config: Optional[NormalizationConfig] = None,
+    input_sha256: str | None = None,
+    config: NormalizationConfig | None = None,
     ffmpeg_bin: str = "ffmpeg",
     ffprobe_bin: str = "ffprobe",
     ffmpeg_timeout: int = 600,
@@ -115,9 +112,7 @@ def normalize_video_file(
 
     # Atomic rename temp → final
     if not os.path.exists(output_tmp):
-        raise NormalizationError(
-            f"FFmpeg reported success but output file not found: {output_tmp}"
-        )
+        raise NormalizationError(f"FFmpeg reported success but output file not found: {output_tmp}")
     os.rename(output_tmp, output_final)
 
     # --- 5. FFprobe output → probe_after.json ---
@@ -172,21 +167,15 @@ def normalize_video_file(
 
     # 6f. Timestamps from zero (or near zero)
     if abs(probe_after.start_time_ms) > 100:
-        validation_errors.append(
-            f"Start time {probe_after.start_time_ms}ms not near zero"
-        )
+        validation_errors.append(f"Start time {probe_after.start_time_ms}ms not near zero")
 
     # 6g. Pixel format
     if probe_after.pixel_format != cfg.pixel_format:
-        validation_errors.append(
-            f"Pixel format {probe_after.pixel_format} != {cfg.pixel_format}"
-        )
+        validation_errors.append(f"Pixel format {probe_after.pixel_format} != {cfg.pixel_format}")
 
     # 6h. Container is mp4
     if "mp4" not in probe_after.container_format.lower():
-        validation_errors.append(
-            f"Container {probe_after.container_format} is not mp4"
-        )
+        validation_errors.append(f"Container {probe_after.container_format} is not mp4")
 
     # 6i. Output not empty
     if output_size == 0:
@@ -247,7 +236,7 @@ def validate_normalization(
     probe_before: FFprobeResult,
     probe_after: FFprobeResult,
     output_path: str,
-    config: Optional[NormalizationConfig] = None,
+    config: NormalizationConfig | None = None,
 ) -> list[str]:
     """Validate a completed normalization without re-running it.
 
@@ -289,6 +278,7 @@ def validate_normalization(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _sha256_file(path: str) -> str:
     """Compute SHA-256 hex digest of a file."""

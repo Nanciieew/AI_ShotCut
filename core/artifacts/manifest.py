@@ -1,10 +1,10 @@
 """Artifact manifest Pydantic schemas — re-exported from core.artifacts."""
 
 from core.artifacts import (
-    ArtifactManifest,
-    ArtifactProducer,
     ArtifactInputRef,
+    ArtifactManifest,
     ArtifactOutputRef,
+    ArtifactProducer,
 )
 
 __all__ = [

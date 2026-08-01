@@ -10,7 +10,6 @@ import hashlib
 import os
 import shutil
 from pathlib import Path
-from typing import Optional
 
 from core.storage.base import BaseStorage
 
@@ -20,7 +19,7 @@ _STORAGE_ROOT = os.getenv("STORAGE_ROOT", "./data")
 class LocalStorage(BaseStorage):
     """Local filesystem storage backend."""
 
-    def __init__(self, root: Optional[str] = None) -> None:
+    def __init__(self, root: str | None = None) -> None:
         self._root = Path(root or _STORAGE_ROOT).resolve()
 
     def _resolve(self, key: str) -> Path:
@@ -35,7 +34,7 @@ class LocalStorage(BaseStorage):
         self,
         key: str,
         data: bytes,
-        content_type: Optional[str] = None,
+        content_type: str | None = None,
     ) -> str:
         path = self._resolve(key)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -45,9 +44,9 @@ class LocalStorage(BaseStorage):
         tmp_path.write_bytes(data)
         tmp_path.rename(path)
 
-        return self.uri_for(key)
+        return self.uri_for(key)  # type: ignore[return-value]
 
-    async def get(self, key: str) -> Optional[bytes]:
+    async def get(self, key: str) -> bytes | None:
         path = self._resolve(key)
         if not path.is_file():
             return None
@@ -96,7 +95,7 @@ class LocalStorage(BaseStorage):
         prefix = "storage://"
         if not uri.startswith(prefix):
             raise ValueError(f"Not a storage URI: {uri}")
-        key = uri[len(prefix):]
+        key = uri[len(prefix) :]
         return self._resolve(key)
 
     @staticmethod

@@ -6,7 +6,10 @@ Usage: python scripts/experiments/omnishotcut/run_adapter.py
 Produces: tests/fixtures/normalized_outputs/omnishotcut/*.shots.json
 """
 
-import json, os, sys, time
+import json
+import os
+import sys
+import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -15,6 +18,7 @@ OUT_DIR = PROJECT_ROOT / "tests" / "fixtures" / "normalized_outputs" / "omnishot
 
 # Set up FFmpeg PATH before any imports
 import imageio_ffmpeg
+
 _FF_DIR = Path(imageio_ffmpeg.get_ffmpeg_exe()).parent
 os.environ["PATH"] = str(_FF_DIR) + os.pathsep + os.environ.get("PATH", "")
 
@@ -42,25 +46,31 @@ def main() -> int:
         print(f"\n--- {vname} ---")
         t0 = time.monotonic()
 
-        output = adapter.predict({
-            "schema_version": "1.0",
-            "task_id": f"test_{vbase}",
-            "video_id": f"test_{vbase}",
-            "model": {"name": "omnishotcut", "version": "0.1.0"},
-            "input": {"video_uri": vpath},
-            "parameters": {"mode": "clean_shot"},
-        })
+        output = adapter.predict(
+            {
+                "schema_version": "1.0",
+                "task_id": f"test_{vbase}",
+                "video_id": f"test_{vbase}",
+                "model": {"name": "omnishotcut", "version": "0.1.0"},
+                "input": {"video_uri": vpath},
+                "parameters": {"mode": "clean_shot"},
+            }
+        )
 
         rt = time.monotonic() - t0
 
         if output["status"] == "SUCCEEDED":
             m = output["metrics"]
             shot_count = m["shot_count"]
-            print(f"  Status: OK  shots={shot_count} "
-                  f"(raw={m['shot_count_raw']}) "
-                  f"fp_removed={m['false_positives_removed']} runtime={rt:.1f}s")
+            print(
+                f"  Status: OK  shots={shot_count} "
+                f"(raw={m['shot_count_raw']}) "
+                f"fp_removed={m['false_positives_removed']} runtime={rt:.1f}s"
+            )
             if m.get("frame_diff", {}).get("false_positives_removed", 0) > 0:
-                print(f"  Frame-diff removed {m['frame_diff']['false_positives_removed']} FP boundaries")
+                print(
+                    f"  Frame-diff removed {m['frame_diff']['false_positives_removed']} FP boundaries"
+                )
 
             # Save task-level result per IO_Rule §2
             task_path = OUT_DIR / f"{vbase}.task_result.json"
@@ -73,7 +83,9 @@ def main() -> int:
                 "model": {"name": "omnishotcut", "version": "0.1.0"},
                 "shots": adapter._last_shots,
             }
-            shots_path.write_text(json.dumps(shots_artifact, indent=2, ensure_ascii=False), encoding="utf-8")
+            shots_path.write_text(
+                json.dumps(shots_artifact, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
             out_path = task_path
         else:
             print(f"  Status: FAIL  {output['error']['code']}: {output['error']['message']}")
@@ -83,7 +95,7 @@ def main() -> int:
         results.append({"video": vname, "status": output["status"], "output": out_path.name})
 
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     for r in results:
         print(f"  {r['video']:<30} {r['status']}")
     print(f"\nOutputs: {OUT_DIR}")

@@ -17,9 +17,9 @@ OUTPUT_DIR = PROJECT_ROOT / "tests" / "fixtures" / "raw_outputs" / "omnishotcut"
 
 def inspect_file(filepath: Path) -> None:
     raw = json.loads(filepath.read_text(encoding="utf-8"))
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"File: {filepath.name}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  Video:        {raw.get('video')}")
     print(f"  FPS:          {raw.get('fps_num')}/{raw.get('fps_den')} = {raw.get('fps')}")
     print(f"  Frames:       {raw.get('frame_count')}")
@@ -30,12 +30,14 @@ def inspect_file(filepath: Path) -> None:
     print(f"  Error:        {raw.get('error')}")
     ranges = raw.get("raw_ranges")
     if ranges:
-        print(f"\n  Raw ranges (first 5):")
+        print("\n  Raw ranges (first 5):")
         for r in ranges[:5]:
             print(f"    [{r[0]:>6}, {r[1]:>6}] inclusive, len={r[1] - r[0] + 1}f")
         fps = raw["fps_num"] / raw["fps_den"]
         s0, e0 = ranges[0]
-        print(f"\n  First→ms: [{s0},{e0}] → [{round(s0*1000/fps)}, {round((e0+1)*1000/fps)})")
+        print(
+            f"\n  First→ms: [{s0},{e0}] → [{round(s0 * 1000 / fps)}, {round((e0 + 1) * 1000 / fps)})"
+        )
 
 
 def main() -> int:

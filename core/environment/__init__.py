@@ -10,11 +10,11 @@ Aggregate via EnvironmentReport in report.py.
 
 __version__ = "1.0.0"
 
-from core.environment.report import EnvironmentReport, OverallStatus
-from core.environment.system_info import collect_system_info
 from core.environment.executable_info import collect_executable_info
 from core.environment.pytorch_info import collect_pytorch_info
+from core.environment.report import EnvironmentReport, OverallStatus
 from core.environment.storage_info import collect_storage_info
+from core.environment.system_info import collect_system_info
 
 __all__ = [
     "__version__",

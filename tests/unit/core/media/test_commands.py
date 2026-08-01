@@ -7,9 +7,8 @@ Tests that do NOT require real FFmpeg:
   - Timestamp normalization
 """
 
-from core.media.schemas import FFprobeResult, NormalizationConfig
 from core.media.ffmpeg import build_normalize_command, get_ffmpeg_version
-from core.media.exceptions import FFmpegError
+from core.media.schemas import FFprobeResult, NormalizationConfig
 
 
 def _make_probe(

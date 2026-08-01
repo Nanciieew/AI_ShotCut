@@ -8,7 +8,6 @@ Each signal handler emits a structured log line that includes at minimum:
   - event name
 """
 
-import logging
 from celery import signals
 from celery.utils.log import get_task_logger
 

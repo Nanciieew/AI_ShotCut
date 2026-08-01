@@ -45,10 +45,16 @@ exclude = [
     "__pycache__/",
     ".pytest_cache/",
     "alembic/versions/",
+    "models/*/patches/",
+    "*.md",
 ]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E402"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["E501"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -61,6 +67,9 @@ ignore_missing_imports = true
 exclude = [
     "third_party/",
     "model_store/",
+    "tests/",
+    "scripts/",
+    "alembic/",
 ]
 
 [tool.pytest.ini_options]

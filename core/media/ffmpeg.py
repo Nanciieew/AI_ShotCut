@@ -4,20 +4,17 @@ All FFmpeg invocations go through this module.
 No task should shell out to ffmpeg directly.
 """
 
-import os
 import subprocess
-from pathlib import Path
-from typing import Optional
 
-from core.media.schemas import FFprobeResult, NormalizationConfig
 from core.media.exceptions import FFmpegError
+from core.media.schemas import FFprobeResult, NormalizationConfig
 
 
 def build_normalize_command(
     input_path: str,
     output_path: str,
     probe: FFprobeResult,
-    config: Optional[NormalizationConfig] = None,
+    config: NormalizationConfig | None = None,
 ) -> list[str]:
     """Build an FFmpeg normalization command as a parameter list.
 
@@ -40,34 +37,43 @@ def build_normalize_command(
         List of command arguments (safe for subprocess, no shell=True).
     """
     cfg = config or NormalizationConfig()
-    width = probe.width or 1920
-    height = probe.height or 1080
 
     cmd = [
         "ffmpeg",
         "-hide_banner",
         "-y",
-        "-i", str(input_path),
+        "-i",
+        str(input_path),
         # Video stream
-        "-map", "0:v:0",
+        "-map",
+        "0:v:0",
         # Audio stream (optional — `?` means skip if missing)
-        "-map", "0:a:0?",
+        "-map",
+        "0:a:0?",
         # Video encoding
-        "-c:v", cfg.video_codec,
-        "-pix_fmt", cfg.pixel_format,
-        "-vsync", cfg.frame_rate_mode,
+        "-c:v",
+        cfg.video_codec,
+        "-pix_fmt",
+        cfg.pixel_format,
+        "-vsync",
+        cfg.frame_rate_mode,
         # Scale to even dimensions (codec requirement)
-        "-vf", f"scale=trunc(iw/2)*2:trunc(ih/2)*2",
+        "-vf",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2",
         # Preset for speed/quality balance
-        "-preset", "fast",
-        "-crf", "23",
+        "-preset",
+        "fast",
+        "-crf",
+        "23",
     ]
 
     # Audio encoding (only if audio stream exists)
     if probe.has_audio:
         cmd += [
-            "-c:a", cfg.audio_codec,
-            "-ar", str(cfg.audio_sample_rate),
+            "-c:a",
+            cfg.audio_codec,
+            "-ar",
+            str(cfg.audio_sample_rate),
         ]
 
     # Faststart for web playback
@@ -109,22 +115,18 @@ def run_ffmpeg(
     try:
         result = subprocess.run(
             cmd,
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        raise FFmpegError(
-            f"{description} timed out after {timeout}s"
-        )
+        raise FFmpegError(f"{description} timed out after {timeout}s")
     except FileNotFoundError:
-        raise FFmpegError(
-            f"ffmpeg not found. Is FFmpeg installed?"
-        )
+        raise FFmpegError("ffmpeg not found. Is FFmpeg installed?")
 
     if result.returncode != 0:
         stderr_tail = result.stderr[-500:] if result.stderr else "(no stderr)"
-        raise FFmpegError(
-            f"{description} failed (exit {result.returncode}): {stderr_tail}"
-        )
+        raise FFmpegError(f"{description} failed (exit {result.returncode}): {stderr_tail}")
 
     return result
 
@@ -137,7 +139,9 @@ def get_ffmpeg_version(ffmpeg_bin: str = "ffmpeg") -> str:
     try:
         result = subprocess.run(
             [ffmpeg_bin, "-version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         # First line is e.g. "ffmpeg version 7.1.5-0+deb13u1 ..."
         return result.stdout.split("\n")[0].strip()

@@ -8,8 +8,8 @@ synchronous engine + sessionmaker.
 """
 
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -22,21 +22,13 @@ DATABASE_URL_ASYNC = os.getenv(
     "sqlite+aiosqlite:///./data/app.db",
 )
 
-DATABASE_URL_SYNC = (
-    DATABASE_URL_ASYNC
-    .replace("+aiosqlite", "")
-    .replace("+asyncpg", "+psycopg2")
-)
+DATABASE_URL_SYNC = DATABASE_URL_ASYNC.replace("+aiosqlite", "").replace("+asyncpg", "+psycopg2")
 
 _sync_engine = create_engine(
     DATABASE_URL_SYNC,
     echo=False,
     # SQLite needs this for cross-thread access
-    connect_args=(
-        {"check_same_thread": False}
-        if "sqlite" in DATABASE_URL_SYNC
-        else {}
-    ),
+    connect_args=({"check_same_thread": False} if "sqlite" in DATABASE_URL_SYNC else {}),
 )
 
 SyncSessionFactory = sessionmaker(

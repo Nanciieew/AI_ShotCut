@@ -6,7 +6,7 @@ POST   /api/v1/videos/{id}/analyze-shots — Start shot analysis pipeline
 GET    /api/v1/videos/{id}          — Get video metadata
 """
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.dependencies import get_db
@@ -32,7 +32,10 @@ async def upload_video(
     return {
         "video_id": "placeholder",
         "upload_status": "SUCCEEDED",
-        "message": "upload_video not yet implemented — use POST /videos/{id}/analyze-shots with staged video",
+        "message": (
+            "upload_video not yet implemented — "
+            "use POST /videos/{id}/analyze-shots with staged video"
+        ),
     }
 
 
@@ -65,6 +68,7 @@ async def get_video(
 ):
     """Get video metadata and analysis status."""
     from sqlalchemy import select
+
     from core.database.models import Video
 
     result = await db.execute(select(Video).where(Video.video_id == video_id))

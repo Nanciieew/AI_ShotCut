@@ -1,10 +1,6 @@
 """Unit tests for EnvironmentReport — aggregation, sanitization, serialization."""
 
 import json
-import os
-import tempfile
-
-import pytest
 
 from core.environment.report import EnvironmentReport, OverallStatus
 
@@ -95,9 +91,12 @@ def test_sanitize_removes_secrets():
 def test_sanitize_long_connection_string():
     report = EnvironmentReport()
     report.checks = [
-        {"check": "db", "status": "PASS",
-         "value": "postgresql://user:password@host:5432/db?sslmode=require" * 5,
-         "detail": None},
+        {
+            "check": "db",
+            "status": "PASS",
+            "value": "postgresql://user:password@host:5432/db?sslmode=require" * 5,
+            "detail": None,
+        },
     ]
     report.finalize()
     d = report.to_dict()

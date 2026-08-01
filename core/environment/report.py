@@ -18,12 +18,11 @@ Usage:
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
-from core.environment import system_info, executable_info, pytorch_info, storage_info
+from core.environment import executable_info, pytorch_info, storage_info, system_info
 
 
 class OverallStatus(str, Enum):
@@ -37,7 +36,7 @@ class EnvironmentReport:
 
     def __init__(self) -> None:
         self.checks: list[dict[str, Any]] = []
-        self._overall: Optional[OverallStatus] = None
+        self._overall: OverallStatus | None = None
         self._generated_at: str = datetime.now(timezone.utc).isoformat()
 
     # ------------------------------------------------------------------
@@ -58,9 +57,7 @@ class EnvironmentReport:
         storage_root: str | None = None,
         model_store_root: str | None = None,
     ) -> None:
-        self.checks.extend(
-            storage_info.collect_storage_info(storage_root, model_store_root)
-        )
+        self.checks.extend(storage_info.collect_storage_info(storage_root, model_store_root))
 
     def add_checks(self, checks: list[dict[str, Any]]) -> None:
         """Append arbitrary checks (e.g. from a model-specific script)."""
@@ -83,7 +80,7 @@ class EnvironmentReport:
         return self._overall
 
     @property
-    def overall(self) -> Optional[OverallStatus]:
+    def overall(self) -> OverallStatus | None:
         return self._overall
 
     # ------------------------------------------------------------------
@@ -141,9 +138,11 @@ class EnvironmentReport:
 
         lines.append(f"\n{'=' * width}")
         counts = self._count_statuses()
-        lines.append(f"PASS: {counts['PASS']}  WARNING: {counts['WARNING']}  "
-                     f"FAIL: {counts['FAIL']}  NOT_INSTALLED: {counts['NOT_INSTALLED']}  "
-                     f"NOT_RUN: {counts['NOT_RUN']}")
+        lines.append(
+            f"PASS: {counts['PASS']}  WARNING: {counts['WARNING']}  "
+            f"FAIL: {counts['FAIL']}  NOT_INSTALLED: {counts['NOT_INSTALLED']}  "
+            f"NOT_RUN: {counts['NOT_RUN']}"
+        )
 
         if self._overall == OverallStatus.BLOCKED:
             lines.append("\n[BLOCKED] Fix FAIL items above before proceeding.")
@@ -169,8 +168,13 @@ class EnvironmentReport:
         }.get(status, "[?]")
 
     def _count_statuses(self) -> dict[str, int]:
-        counts: dict[str, int] = {"PASS": 0, "WARNING": 0, "FAIL": 0,
-                                   "NOT_INSTALLED": 0, "NOT_RUN": 0}
+        counts: dict[str, int] = {
+            "PASS": 0,
+            "WARNING": 0,
+            "FAIL": 0,
+            "NOT_INSTALLED": 0,
+            "NOT_RUN": 0,
+        }
         for c in self.checks:
             s = c.get("status", "NOT_RUN")
             counts[s] = counts.get(s, 0) + 1
@@ -181,8 +185,15 @@ class EnvironmentReport:
 
         Strips: passwords, full connection strings, API keys, tokens.
         """
-        sensitive_keys = {"password", "secret", "api_key", "token", "dsn",
-                          "connection_string", "database_url"}
+        sensitive_keys = {
+            "password",
+            "secret",
+            "api_key",
+            "token",
+            "dsn",
+            "connection_string",
+            "database_url",
+        }
         sanitized: list[dict[str, Any]] = []
         for c in self.checks:
             entry: dict[str, Any] = {}
@@ -192,8 +203,7 @@ class EnvironmentReport:
                 elif isinstance(v, str) and len(v) > 200:
                     # Long strings might contain connection strings
                     lower = v.lower()
-                    if any(marker in lower for marker in
-                           ("password=", "://", "secret=", "token=")):
+                    if any(marker in lower for marker in ("password=", "://", "secret=", "token=")):
                         entry[k] = "[REDACTED — possible credential]"
                     else:
                         entry[k] = v

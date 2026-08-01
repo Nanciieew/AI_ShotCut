@@ -18,11 +18,10 @@ from typing import Any
 
 from models.base.adapter import BaseModelAdapter
 from models.omnishotcut.converter import ShotConverter
-from models.omnishotcut.validation import validate_shot_output
 from models.omnishotcut.exceptions import (
     OmniShotCutImportError,
-    OmniShotCutInferenceError,
 )
+from models.omnishotcut.validation import validate_shot_output
 
 # FIXED third-party source
 FIXED_COMMIT = "23ad6fb41b296fb9258b0e7825125a914573b906"
@@ -47,7 +46,7 @@ class OmniShotCutAdapter(BaseModelAdapter):
     def __init__(self) -> None:
         self._model: Any = None
         self._loaded = False
-        self._last_shots: list[dict] = []   # last predict() shots for artifact save
+        self._last_shots: list[dict] = []  # last predict() shots for artifact save
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -129,7 +128,9 @@ class OmniShotCutAdapter(BaseModelAdapter):
             video_path = self._resolve_uri(video_uri)
             if not os.path.exists(video_path):
                 return self._error(
-                    task_id, video_id, schema_version,
+                    task_id,
+                    video_id,
+                    schema_version,
                     "VIDEO_DECODE_FAILED",
                     f"Video not found: {video_path}",
                     retryable=False,
@@ -150,15 +151,10 @@ class OmniShotCutAdapter(BaseModelAdapter):
                 confidences = [{"intra_conf": 1.0, "inter_conf": 1.0}] * len(result)
             else:
                 raw_ranges, raw_intra, raw_inter = result
-                confidences = [
-                    {"intra_conf": 1.0, "inter_conf": 1.0}
-                    for _ in raw_ranges
-                ]
+                confidences = [{"intra_conf": 1.0, "inter_conf": 1.0} for _ in raw_ranges]
 
             # --- Frame-diff post-filter ---
-            filtered_ranges, fd_stats = self._apply_frame_diff(
-                video_path, raw_ranges
-            )
+            filtered_ranges, fd_stats = self._apply_frame_diff(video_path, raw_ranges)
 
             # --- Convert frames → ms ---
             converter = ShotConverter(fps_num=fps_num, fps_den=fps_den)
@@ -174,28 +170,34 @@ class OmniShotCutAdapter(BaseModelAdapter):
                         conf = (c.get("intra_conf", 0) + c.get("inter_conf", 0)) / 2
                         break
 
-                shots_list.append({
-                    "shot_id": s.shot_id,
-                    "video_id": video_id,
-                    "index": s.index,
-                    "start_ms": s.start_ms,
-                    "end_ms": s.end_ms,
-                    "start_frame": s.start_frame,
-                    "end_frame_exclusive": s.end_frame_exclusive,
-                    "boundary_type": s.boundary_type,
-                    "confidence": round(conf, 4) if conf else None,
-                })
+                shots_list.append(
+                    {
+                        "shot_id": s.shot_id,
+                        "video_id": video_id,
+                        "index": s.index,
+                        "start_ms": s.start_ms,
+                        "end_ms": s.end_ms,
+                        "start_frame": s.start_frame,
+                        "end_frame_exclusive": s.end_frame_exclusive,
+                        "boundary_type": s.boundary_type,
+                        "confidence": round(conf, 4) if conf else None,
+                    }
+                )
 
             # --- Validate ---
-            validation = validate_shot_output({
-                "video_id": video_id,
-                "model": {"name": self.name, "version": self.version},
-                "shots": shots_list,
-            })
+            validation = validate_shot_output(
+                {
+                    "video_id": video_id,
+                    "model": {"name": self.name, "version": self.version},
+                    "shots": shots_list,
+                }
+            )
 
             if not validation["valid"]:
                 return self._error(
-                    task_id, video_id, schema_version,
+                    task_id,
+                    video_id,
+                    schema_version,
                     "SCHEMA_VALIDATION_FAILED",
                     "; ".join(validation["errors"]),
                     retryable=False,
@@ -218,8 +220,8 @@ class OmniShotCutAdapter(BaseModelAdapter):
                 artifact_uri=artifact_uri,
                 shots=shots_list,
                 metrics={
-                    "shot_count": len(filtered_ranges),        # IO_Rule §2 required
-                    "shot_count_raw": len(raw_ranges),          # pre-filter count
+                    "shot_count": len(filtered_ranges),  # IO_Rule §2 required
+                    "shot_count_raw": len(raw_ranges),  # pre-filter count
                     "false_positives_removed": len(raw_ranges) - len(filtered_ranges),
                     "runtime_ms": runtime_ms,
                     "frame_diff": fd_stats,
@@ -229,14 +231,18 @@ class OmniShotCutAdapter(BaseModelAdapter):
 
         except OmniShotCutImportError:
             return self._error(
-                task_id, video_id, schema_version,
+                task_id,
+                video_id,
+                schema_version,
                 "OMNISHOTCUT_IMPORT_ERROR",
                 "OmniShotCut is not installed.",
                 retryable=False,
             )
         except Exception as e:
             return self._error(
-                task_id, video_id, schema_version,
+                task_id,
+                video_id,
+                schema_version,
                 "MODEL_INFERENCE_FAILED",
                 str(e),
                 retryable=False,
@@ -284,7 +290,11 @@ class OmniShotCutAdapter(BaseModelAdapter):
             }
         except Exception:
             # If frame-diff fails, return raw ranges unfiltered
-            return raw_ranges, {"boundaries_checked": 0, "false_positives_removed": 0, "error": "frame_diff_failed"}
+            return raw_ranges, {
+                "boundaries_checked": 0,
+                "false_positives_removed": 0,
+                "error": "frame_diff_failed",
+            }
 
     # ------------------------------------------------------------------
     # Helpers
@@ -295,6 +305,7 @@ class OmniShotCutAdapter(BaseModelAdapter):
         """Ensure FFmpeg/ffprobe are on PATH."""
         try:
             import imageio_ffmpeg
+
             ff_dir = str(Path(imageio_ffmpeg.get_ffmpeg_exe()).parent)
             os.environ["PATH"] = ff_dir + os.pathsep + os.environ.get("PATH", "")
         except ImportError:
@@ -306,7 +317,7 @@ class OmniShotCutAdapter(BaseModelAdapter):
         prefix = "storage://"
         if uri.startswith(prefix):
             root = os.getenv("STORAGE_ROOT", "./data")
-            return os.path.join(root, uri[len(prefix):])
+            return os.path.join(root, uri[len(prefix) :])
         return uri
 
     @staticmethod
@@ -317,6 +328,7 @@ class OmniShotCutAdapter(BaseModelAdapter):
 
         try:
             from imageio_ffmpeg import get_ffmpeg_exe
+
             ffmpeg = get_ffmpeg_exe()
         except ImportError:
             ffmpeg = "ffmpeg"
@@ -324,7 +336,9 @@ class OmniShotCutAdapter(BaseModelAdapter):
         try:
             result = subprocess.run(
                 [ffmpeg, "-i", video_path],
-                capture_output=True, text=True, timeout=15,
+                capture_output=True,
+                text=True,
+                timeout=15,
             )
             # ffmpeg prints info to stderr: "Stream #0:0: ... 30 fps ..."
             for line in (result.stderr + result.stdout).split("\n"):
@@ -341,8 +355,12 @@ class OmniShotCutAdapter(BaseModelAdapter):
 
     @staticmethod
     def _success(
-        task_id: str, video_id: str, schema_version: str,
-        artifact_key: str, artifact_uri: str, metrics: dict,
+        task_id: str,
+        video_id: str,
+        schema_version: str,
+        artifact_key: str,
+        artifact_uri: str,
+        metrics: dict,
         shots: list[dict] | None = None,
         warnings: list[str] | None = None,
     ) -> dict[str, Any]:
@@ -360,8 +378,12 @@ class OmniShotCutAdapter(BaseModelAdapter):
 
     @staticmethod
     def _error(
-        task_id: str, video_id: str, schema_version: str,
-        code: str, message: str, retryable: bool,
+        task_id: str,
+        video_id: str,
+        schema_version: str,
+        code: str,
+        message: str,
+        retryable: bool,
     ) -> dict[str, Any]:
         return {
             "schema_version": schema_version,

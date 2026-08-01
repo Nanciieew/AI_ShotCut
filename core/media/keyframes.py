@@ -257,7 +257,7 @@ def extract_keyframes(
         stream = container.streams.video[0]
         stream.thread_type = "AUTO"
 
-        time_base = float(stream.time_base)
+        time_base = float(stream.time_base) if stream.time_base else 0.0
         fps_num = int(stream.average_rate.numerator) if stream.average_rate else None
         fps_den = int(stream.average_rate.denominator) if stream.average_rate else None
 
@@ -348,7 +348,7 @@ def _save_target(
     if long_side > max_long_side:
         scale = max_long_side / long_side
         new_size = (round(w * scale), round(h * scale))
-        img = img.resize(new_size, Image.LANCZOS)
+        img = img.resize(new_size, Image.LANCZOS)  # type: ignore[attr-defined]
 
     # Encode to bytes (no EXIF metadata)
     buf = io.BytesIO()

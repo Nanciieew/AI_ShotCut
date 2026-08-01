@@ -4,7 +4,6 @@ All time values in integer milliseconds. FPS stored as rational fraction.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -25,8 +24,8 @@ class FFprobeResult:
     frame_rate_mode: str = "CFR"  # CFR or VFR
 
     # Audio stream
-    audio_codec: Optional[str] = None
-    audio_sample_rate: Optional[int] = None  # Hz
+    audio_codec: str | None = None
+    audio_sample_rate: int | None = None  # Hz
 
     # Container
     container_format: str = "unknown"
@@ -39,7 +38,7 @@ class FFprobeResult:
     has_audio: bool = False
 
     # Raw ffprobe JSON (for full preservation)
-    raw_json: Optional[dict] = None
+    raw_json: dict | None = None
 
     @property
     def fps(self) -> float:

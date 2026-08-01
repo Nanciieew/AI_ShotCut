@@ -1,11 +1,9 @@
 """Unit tests for core.media — manifest generation."""
 
 import json
-import os
-import tempfile
 
-from core.media.schemas import FFprobeResult, NormalizationConfig, NormalizationResult
 from core.media.normalization import _build_normalization_manifest
+from core.media.schemas import FFprobeResult, NormalizationConfig, NormalizationResult
 
 
 def _make_result(**kwargs) -> NormalizationResult:

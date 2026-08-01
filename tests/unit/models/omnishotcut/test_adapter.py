@@ -1,6 +1,5 @@
 """Unit tests for OmniShotCutAdapter — mock tests, no real model."""
 
-import pytest
 from models.omnishotcut.adapter import OmniShotCutAdapter
 
 
@@ -24,6 +23,7 @@ class TestAdapterUnloaded:
     def test_resolve_uri_storage(self):
         uri = "storage://projects/p1/videos/v1/normalized/video.mp4"
         import os
+
         root = os.getenv("STORAGE_ROOT", "./data")
         result = OmniShotCutAdapter._resolve_uri(uri)
         assert result == os.path.join(root, "projects/p1/videos/v1/normalized/video.mp4")
@@ -34,8 +34,11 @@ class TestAdapterUnloaded:
 
     def test_success_format(self):
         output = OmniShotCutAdapter._success(
-            task_id="t1", video_id="v1", schema_version="1.0",
-            artifact_key="shots", artifact_uri="storage://.../shots.json",
+            task_id="t1",
+            video_id="v1",
+            schema_version="1.0",
+            artifact_key="shots",
+            artifact_uri="storage://.../shots.json",
             metrics={"shot_count": 5, "runtime_ms": 1000},
         )
         assert output["status"] == "SUCCEEDED"
@@ -46,8 +49,12 @@ class TestAdapterUnloaded:
 
     def test_error_format(self):
         output = OmniShotCutAdapter._error(
-            task_id="t1", video_id="v1", schema_version="1.0",
-            code="VIDEO_DECODE_FAILED", message="test error", retryable=False,
+            task_id="t1",
+            video_id="v1",
+            schema_version="1.0",
+            code="VIDEO_DECODE_FAILED",
+            message="test error",
+            retryable=False,
         )
         assert output["status"] == "FAILED"
         assert output["error"]["code"] == "VIDEO_DECODE_FAILED"

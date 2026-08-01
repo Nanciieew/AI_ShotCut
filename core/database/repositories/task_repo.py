@@ -6,7 +6,6 @@ transactions themselves (caller commits/rolls back).
 """
 
 from datetime import datetime, timezone
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -28,7 +27,7 @@ class TaskRepository:
         task_id: str,
         video_id: str,
         task_type: str = "full_video_analysis",
-        celery_task_id: Optional[str] = None,
+        celery_task_id: str | None = None,
     ) -> Task:
         task = Task(
             task_id=task_id,
@@ -46,14 +45,14 @@ class TaskRepository:
     # Read
     # ------------------------------------------------------------------
 
-    def get(self, task_id: str) -> Optional[Task]:
+    def get(self, task_id: str) -> Task | None:
         return self._session.get(Task, task_id)
 
     # ------------------------------------------------------------------
     # Update
     # ------------------------------------------------------------------
 
-    def update_status(self, task_id: str, status: str) -> Optional[Task]:
+    def update_status(self, task_id: str, status: str) -> Task | None:
         """Set task status + record timing.
 
         RUNNING → sets started_at.
@@ -75,9 +74,7 @@ class TaskRepository:
 
         return task
 
-    def update_progress(
-        self, task_id: str, progress: int, stage: Optional[str] = None
-    ) -> Optional[Task]:
+    def update_progress(self, task_id: str, progress: int, stage: str | None = None) -> Task | None:
         """Update progress 0-100 and optional stage label."""
         task = self.get(task_id)
         if task is None:
@@ -87,9 +84,7 @@ class TaskRepository:
             task.stage = stage
         return task
 
-    def set_error(
-        self, task_id: str, error_code: str, error_message: str
-    ) -> Optional[Task]:
+    def set_error(self, task_id: str, error_code: str, error_message: str) -> Task | None:
         """Record error details on a failed task."""
         task = self.get(task_id)
         if task is None:
@@ -100,7 +95,7 @@ class TaskRepository:
         task.finished_at = datetime.now(timezone.utc)
         return task
 
-    def set_celery_id(self, task_id: str, celery_task_id: str) -> Optional[Task]:
+    def set_celery_id(self, task_id: str, celery_task_id: str) -> Task | None:
         """Bind the Celery-internal task ID after dispatch."""
         task = self.get(task_id)
         if task is None:
@@ -108,7 +103,7 @@ class TaskRepository:
         task.celery_task_id = celery_task_id
         return task
 
-    def increment_retry(self, task_id: str) -> Optional[Task]:
+    def increment_retry(self, task_id: str) -> Task | None:
         """Increment retry count and set status to RETRYING."""
         task = self.get(task_id)
         if task is None:

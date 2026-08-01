@@ -9,20 +9,20 @@ Provides:
 
 import asyncio
 import tempfile
+from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import AsyncGenerator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from core.database.models import Base
 from apps.api.main import create_app
-
+from core.database.models import Base
 
 # ---------------------------------------------------------------------------
 # Event loop (session scope)
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -34,6 +34,7 @@ def event_loop():
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="session")
 async def test_engine():
@@ -58,6 +59,7 @@ async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
 # FastAPI test client
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
     """Async HTTP test client for the FastAPI app."""
@@ -72,6 +74,7 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 # ---------------------------------------------------------------------------
 # Temporary directories
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def temp_storage_dir() -> Path:
@@ -90,6 +93,7 @@ def temp_data_dir() -> Path:
 # ---------------------------------------------------------------------------
 # Test fixtures path
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="session")
 def fixtures_dir() -> Path:

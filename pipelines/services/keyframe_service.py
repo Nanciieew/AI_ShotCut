@@ -202,19 +202,19 @@ def run_keyframe_extraction(
 
         samples: list[dict] = []
         for raw in raw_samples:
-            t = target_by_frame.get(raw["frame_number"])
-            if t is not None:
-                image_rel = f"{artifact_base}/images/{t.filename}"
+            kt: KeyframeTarget | None = target_by_frame.get(raw["frame_number"])
+            if kt is not None:
+                image_rel = f"{artifact_base}/images/{kt.filename}"
                 samples.append(
                     {
                         "position_num": raw["position_num"],
                         "position_den": raw["position_den"],
-                        "frame_number": t.frame_number,
-                        "timestamp_ms": t.timestamp_ms,
-                        "decoded_pts_ms": t.decoded_pts_ms,
+                        "frame_number": kt.frame_number,
+                        "timestamp_ms": kt.timestamp_ms,
+                        "decoded_pts_ms": kt.decoded_pts_ms,
                         "uri": f"storage://{image_rel}",
-                        "sha256": t.sha256,
-                        "size_bytes": t.size_bytes,
+                        "sha256": kt.sha256,
+                        "size_bytes": kt.size_bytes,
                         "duplicated_reference": False,
                     }
                 )
@@ -234,8 +234,7 @@ def run_keyframe_extraction(
                         "size_bytes": 0,
                         "duplicated_reference": True,
                         "note": (
-                            "Frame not extracted "
-                            "(same frame as another sample, or decode miss)"
+                            "Frame not extracted (same frame as another sample, or decode miss)"
                         ),
                     }
                 )

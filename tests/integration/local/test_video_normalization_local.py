@@ -3,22 +3,20 @@
 Markers: local, slow
 """
 
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
 
-from core.media.schemas import FFprobeResult, NormalizationConfig
+from core.media.exceptions import FFprobeError
+from core.media.ffmpeg import build_normalize_command, get_ffmpeg_version, run_ffmpeg
 from core.media.ffprobe import probe_video, run_ffprobe
-from core.media.ffmpeg import build_normalize_command, run_ffmpeg, get_ffmpeg_version
 from core.media.normalization import validate_normalization
-from core.media.exceptions import FFprobeError, FFmpegError, NormalizationError
-
+from core.media.schemas import NormalizationConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def hard_cut_video():
@@ -44,6 +42,7 @@ def output_dir(tmp_path):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.local
 @pytest.mark.slow
 class TestFFprobeLocal:
@@ -60,7 +59,7 @@ class TestFFprobeLocal:
 
     def test_probe_saves_to_disk(self, hard_cut_video, output_dir):
         """Probe saves raw JSON to output directory."""
-        result = probe_video(
+        probe_video(
             str(hard_cut_video),
             output_dir=str(output_dir),
             label="probe_test",
@@ -153,8 +152,7 @@ class TestFFmpegNormalizeLocal:
         one_frame = probe_before.duration_one_frame_ms
         max_delta = max(100, one_frame)
         assert delta <= max_delta, (
-            f"Duration delta {delta}ms exceeds max {max_delta}ms "
-            f"(1 frame = {one_frame}ms)"
+            f"Duration delta {delta}ms exceeds max {max_delta}ms (1 frame = {one_frame}ms)"
         )
 
 

@@ -408,7 +408,7 @@ def run_omnishotcut_pipeline(
             from pipelines.services.keyframe_service import run_keyframe_extraction
 
             storage_root = str(output_root)
-            normalized_path = _os.path.join(
+            kf_video_path: str = _os.path.join(
                 storage_root,
                 "projects",
                 project_id,
@@ -421,7 +421,7 @@ def run_omnishotcut_pipeline(
             )
 
             keyframe_result = run_keyframe_extraction(
-                video_path=normalized_path,
+                video_path=kf_video_path,
                 shots_data=shots_data,
                 fps_num=probe_after.fps_num,
                 fps_den=probe_after.fps_den,

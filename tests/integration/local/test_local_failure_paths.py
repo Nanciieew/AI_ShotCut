@@ -4,7 +4,6 @@ Markers: local, slow (no model needed for most)
 """
 
 import os
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -22,6 +21,7 @@ def output_root(tmp_path):
 # ---------------------------------------------------------------------------
 # Failure path: invalid video
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.local
 class TestInvalidVideo:
@@ -53,6 +53,7 @@ class TestInvalidVideo:
 # ---------------------------------------------------------------------------
 # Failure path: missing model weights
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.local
 class TestMissingWeights:
@@ -88,6 +89,7 @@ class TestMissingWeights:
 # ---------------------------------------------------------------------------
 # Failure path: missing normalized artifact
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.local
 class TestMissingNormalizedArtifact:

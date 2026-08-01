@@ -11,8 +11,6 @@ Metrics:
 """
 
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
 
 import numpy as np
 
@@ -22,9 +20,9 @@ class FrameDiffResult:
     """Pixel-difference metrics for a single boundary."""
 
     frame_idx: int
-    mad: float               # Mean absolute difference [0, 255]
-    hist_corr: float         # Histogram correlation [0, 1], higher = more similar
-    ssd_norm: float          # Normalized SSD [0, 1]
+    mad: float  # Mean absolute difference [0, 255]
+    hist_corr: float  # Histogram correlation [0, 1], higher = more similar
+    ssd_norm: float  # Normalized SSD [0, 1]
     is_likely_false: bool = False  # Heuristic flag
     note: str = ""
 
@@ -49,7 +47,7 @@ class FrameDiffValidator:
     """
 
     # Heuristic thresholds (calibrated from literature + empirical)
-    MAD_HARD_CUT_MIN = 8.0      # Below this, unlikely to be a real hard cut
+    MAD_HARD_CUT_MIN = 8.0  # Below this, unlikely to be a real hard cut
     HIST_CORR_HARD_CUT_MAX = 0.85  # Above this, frames are too similar
 
     def __init__(self, mad_threshold: float = 8.0, hist_threshold: float = 0.85) -> None:
@@ -60,7 +58,7 @@ class FrameDiffValidator:
         self,
         video_path: str,
         raw_ranges: list[list[int]],
-        fps: Optional[float] = None,
+        fps: float | None = None,
     ) -> FrameDiffReport:
         """Compute frame-difference at each shot boundary.
 
@@ -93,29 +91,36 @@ class FrameDiffValidator:
             ret2, f1 = cap.read()
 
             if not ret1 or not ret2:
-                boundaries.append(FrameDiffResult(
-                    frame_idx=boundary_frame,
-                    mad=-1, hist_corr=0, ssd_norm=0,
-                    is_likely_false=False,
-                    note="frame read failed",
-                ))
+                boundaries.append(
+                    FrameDiffResult(
+                        frame_idx=boundary_frame,
+                        mad=-1,
+                        hist_corr=0,
+                        ssd_norm=0,
+                        is_likely_false=False,
+                        note="frame read failed",
+                    )
+                )
                 continue
 
             mad, hist_corr, ssd_norm = self._compute_diff(f0, f1)
             likely_false = (mad < self.mad_threshold) and (hist_corr > self.hist_threshold)
 
-            boundaries.append(FrameDiffResult(
-                frame_idx=boundary_frame,
-                mad=round(mad, 2),
-                hist_corr=round(hist_corr, 4),
-                ssd_norm=round(ssd_norm, 6),
-                is_likely_false=likely_false,
-                note=(
-                    f"MAD({mad:.1f}) < {self.mad_threshold} "
-                    f"AND hist_corr({hist_corr:.3f}) > {self.hist_threshold}"
-                    if likely_false else ""
-                ),
-            ))
+            boundaries.append(
+                FrameDiffResult(
+                    frame_idx=boundary_frame,
+                    mad=round(mad, 2),
+                    hist_corr=round(hist_corr, 4),
+                    ssd_norm=round(ssd_norm, 6),
+                    is_likely_false=likely_false,
+                    note=(
+                        f"MAD({mad:.1f}) < {self.mad_threshold} "
+                        f"AND hist_corr({hist_corr:.3f}) > {self.hist_threshold}"
+                        if likely_false
+                        else ""
+                    ),
+                )
+            )
 
         cap.release()
 
@@ -205,8 +210,8 @@ class FrameDiffValidator:
 
         # Normalized SSD
         diff = ga.astype(np.float64) - gb.astype(np.float64)
-        ssd = float(np.sum(diff ** 2))
-        ssd_norm = ssd / (ga.shape[0] * ga.shape[1] * 255.0 ** 2)
+        ssd = float(np.sum(diff**2))
+        ssd_norm = ssd / (ga.shape[0] * ga.shape[1] * 255.0**2)
 
         return mad, hist_corr, ssd_norm
 

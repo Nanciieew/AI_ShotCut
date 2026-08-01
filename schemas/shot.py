@@ -1,7 +1,5 @@
 """Shot schema — a single continuous camera take."""
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 
@@ -16,15 +14,13 @@ class Shot(BaseModel):
     index: int = Field(..., ge=0, description="Zero-based shot index within the video")
     start_ms: int = Field(..., ge=0, description="Start time in milliseconds")
     end_ms: int = Field(..., ge=0, description="End time in milliseconds (exclusive)")
-    start_frame: Optional[int] = Field(
-        default=None, ge=0, description="Start frame number"
-    )
-    end_frame_exclusive: Optional[int] = Field(
+    start_frame: int | None = Field(default=None, ge=0, description="Start frame number")
+    end_frame_exclusive: int | None = Field(
         default=None, ge=0, description="End frame number (exclusive)"
     )
-    boundary_type: Optional[str] = Field(
+    boundary_type: str | None = Field(
         default=None, description="Transition type: hard_cut, dissolve, wipe, etc."
     )
-    confidence: Optional[float] = Field(
+    confidence: float | None = Field(
         default=None, ge=0.0, le=1.0, description="Detection confidence [0, 1]"
     )

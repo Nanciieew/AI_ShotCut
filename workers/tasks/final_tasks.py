@@ -6,7 +6,6 @@ Handles:
   - final.assemble: collects artifacts and produces final_result.json (stub)
 """
 
-
 from core.database.repositories import TaskRepository
 from core.database.session_sync import get_sync_session
 from core.logging.context import clear_task_context, set_task_context

@@ -9,7 +9,6 @@ This module converts:
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -22,8 +21,8 @@ class ConvertedShot:
     end_ms: int
     start_frame: int
     end_frame_exclusive: int
-    boundary_type: Optional[str] = None
-    confidence: Optional[float] = None
+    boundary_type: str | None = None
+    confidence: float | None = None
 
 
 class ShotConverter:
@@ -42,9 +41,7 @@ class ShotConverter:
             fps_den: FPS denominator.
         """
         if fps_num <= 0 or fps_den <= 0:
-            raise ValueError(
-                f"Invalid FPS: {fps_num}/{fps_den}. Both must be positive."
-            )
+            raise ValueError(f"Invalid FPS: {fps_num}/{fps_den}. Both must be positive.")
         self.fps_num = fps_num
         self.fps_den = fps_den
 
@@ -61,7 +58,7 @@ class ShotConverter:
         self,
         raw_ranges: list[list[int]],
         video_id: str,
-        boundary_type: Optional[str] = None,
+        boundary_type: str | None = None,
     ) -> list[ConvertedShot]:
         """Convert OmniShotCut raw frame ranges to project Shots.
 
@@ -82,14 +79,17 @@ class ShotConverter:
         if n == 1:
             start_frame, end_incl = raw_ranges[0]
             end_frame_exclusive = end_incl + 1
-            return [ConvertedShot(
-                shot_id=self._shot_id(0), index=0,
-                start_ms=self.frame_to_ms(start_frame),
-                end_ms=self.frame_to_ms(end_frame_exclusive),
-                start_frame=start_frame,
-                end_frame_exclusive=end_frame_exclusive,
-                boundary_type=boundary_type,
-            )]
+            return [
+                ConvertedShot(
+                    shot_id=self._shot_id(0),
+                    index=0,
+                    start_ms=self.frame_to_ms(start_frame),
+                    end_ms=self.frame_to_ms(end_frame_exclusive),
+                    start_frame=start_frame,
+                    end_frame_exclusive=end_frame_exclusive,
+                    boundary_type=boundary_type,
+                )
+            ]
 
         shots: list[ConvertedShot] = []
         for idx in range(n):
@@ -106,15 +106,17 @@ class ShotConverter:
                 # Last shot: use its own end_frame_exclusive
                 end_ms = self.frame_to_ms(end_frame_exclusive)
 
-            shots.append(ConvertedShot(
-                shot_id=self._shot_id(idx),
-                index=idx,
-                start_ms=start_ms,
-                end_ms=end_ms,
-                start_frame=start_frame,
-                end_frame_exclusive=end_frame_exclusive,
-                boundary_type=boundary_type,
-            ))
+            shots.append(
+                ConvertedShot(
+                    shot_id=self._shot_id(idx),
+                    index=idx,
+                    start_ms=start_ms,
+                    end_ms=end_ms,
+                    start_frame=start_frame,
+                    end_frame_exclusive=end_frame_exclusive,
+                    boundary_type=boundary_type,
+                )
+            )
         return shots
 
     @staticmethod
