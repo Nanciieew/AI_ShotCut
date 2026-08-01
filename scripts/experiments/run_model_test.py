@@ -28,6 +28,7 @@ def setup_ffmpeg() -> None:
     """Ensure FFmpeg is on PATH via imageio-ffmpeg."""
     try:
         import imageio_ffmpeg
+
         ff_dir = str(Path(imageio_ffmpeg.get_ffmpeg_exe()).parent)
         os.environ["PATH"] = ff_dir + os.pathsep + os.environ.get("PATH", "")
     except ImportError:
@@ -45,10 +46,15 @@ def load_adapter(model_name: str):
 
     # Find the adapter class (subclass of BaseModelAdapter)
     from models.base.adapter import BaseModelAdapter
+
     adapter_cls = None
     for name in dir(mod):
         obj = getattr(mod, name)
-        if isinstance(obj, type) and issubclass(obj, BaseModelAdapter) and obj is not BaseModelAdapter:
+        if (
+            isinstance(obj, type)
+            and issubclass(obj, BaseModelAdapter)
+            and obj is not BaseModelAdapter
+        ):
             adapter_cls = obj
             break
 
@@ -66,7 +72,16 @@ def check_io_rule(task_result: dict, model_name: str) -> list[str]:
     issues = []
 
     # §2 Required fields
-    for field in ["schema_version", "task_id", "video_id", "status", "model", "artifacts", "metrics", "error"]:
+    for field in [
+        "schema_version",
+        "task_id",
+        "video_id",
+        "status",
+        "model",
+        "artifacts",
+        "metrics",
+        "error",
+    ]:
         if field not in task_result:
             issues.append(f"Missing required field: {field}")
 
@@ -143,7 +158,7 @@ def check_shots_artifact(shots_data: dict) -> list[str]:
         if shots[i]["end_ms"] != shots[i + 1]["start_ms"]:
             issues.append(
                 f"shots[{i}].end_ms({shots[i]['end_ms']}) != "
-                f"shots[{i+1}].start_ms({shots[i+1]['start_ms']})"
+                f"shots[{i + 1}].start_ms({shots[i + 1]['start_ms']})"
             )
 
     return issues
@@ -156,7 +171,7 @@ def main() -> int:
 
     model_name = args.model
     videos_dir = PROJECT_ROOT / "tests" / "fixtures" / "videos" / model_name
-    raw_dir = PROJECT_ROOT / "tests" / "fixtures" / "raw_outputs" / model_name
+    PROJECT_ROOT / "tests" / "fixtures" / "raw_outputs" / model_name
     norm_dir = PROJECT_ROOT / "tests" / "fixtures" / "normalized_outputs" / model_name
 
     videos = sorted(videos_dir.glob("*.mp4"))
@@ -177,19 +192,21 @@ def main() -> int:
         print(f"\n--- {vname} ---")
 
         t0 = time.monotonic()
-        output = adapter.predict({
-            "schema_version": "1.0",
-            "task_id": f"test_{vbase}",
-            "video_id": f"test_{vbase}",
-            "model": {"name": model_name, "version": getattr(adapter, 'version', '0.1.0')},
-            "input": {"video_uri": str(vp)},
-            "parameters": {"mode": "clean_shot"},
-        })
+        output = adapter.predict(
+            {
+                "schema_version": "1.0",
+                "task_id": f"test_{vbase}",
+                "video_id": f"test_{vbase}",
+                "model": {"name": model_name, "version": getattr(adapter, "version", "0.1.0")},
+                "input": {"video_uri": str(vp)},
+                "parameters": {"mode": "clean_shot"},
+            }
+        )
         rt = time.monotonic() - t0
 
         if output["status"] == "SUCCEEDED":
             m = output["metrics"]
-            print(f"  OK  shots={m.get('shot_count','?')}  runtime={rt:.1f}s")
+            print(f"  OK  shots={m.get('shot_count', '?')}  runtime={rt:.1f}s")
 
             # Save task_result.json (§2)
             task_path = norm_dir / f"{vbase}.task_result.json"
@@ -199,10 +216,12 @@ def main() -> int:
             shots_path = norm_dir / f"{vbase}.shots.json"
             shots_artifact = {
                 "video_id": f"test_{vbase}",
-                "model": {"name": model_name, "version": getattr(adapter, 'version', '0.1.0')},
-                "shots": getattr(adapter, '_last_shots', []),
+                "model": {"name": model_name, "version": getattr(adapter, "version", "0.1.0")},
+                "shots": getattr(adapter, "_last_shots", []),
             }
-            shots_path.write_text(json.dumps(shots_artifact, indent=2, ensure_ascii=False), encoding="utf-8")
+            shots_path.write_text(
+                json.dumps(shots_artifact, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
         else:
             print(f"  FAIL  {output['error']['code']}: {output['error']['message']}")
             task_path = norm_dir / f"{vbase}.error.json"
@@ -218,9 +237,9 @@ def main() -> int:
             for iss in issues[:10]:
                 print(f"    - {iss}")
         else:
-            print(f"  IO_Rule: PASS")
+            print("  IO_Rule: PASS")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"IO_Rule compliance: {'FAIL' if total_issues else 'PASS'} ({total_issues} issues)")
     print(f"Outputs: {norm_dir}")
     return 1 if total_issues else 0

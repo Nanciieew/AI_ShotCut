@@ -36,7 +36,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from core.environment import EnvironmentReport, OverallStatus
+from core.environment import EnvironmentReport
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -53,6 +53,7 @@ EXPECTED_FIXTURES = ["no_cut.mp4", "hard_cut.mp4", "multiple_cuts.mp4"]
 # OmniShotCut-specific checks
 # ---------------------------------------------------------------------------
 
+
 def _status_of(ok: bool, warn: bool = False) -> str:
     if not ok:
         return "FAIL"
@@ -65,6 +66,7 @@ def check_omnishotcut_import() -> dict[str, Any]:
     """Can omnishotcut be imported?"""
     try:
         import omnishotcut  # noqa: F401
+
         path = getattr(omnishotcut, "__file__", "unknown")
         ver = getattr(omnishotcut, "__version__", None)
         return {
@@ -100,49 +102,61 @@ def check_omnishotcut_compatibility() -> list[dict[str, Any]]:
 
     # Python
     py_ok = sys.version_info >= (3, 10)
-    results.append({
-        "check": "omnishotcut_python_compat",
-        "status": _status_of(py_ok),
-        "value": f"{sys.version_info.major}.{sys.version_info.minor}",
-        "detail": "Requires Python 3.10+" if not py_ok else "Compatible",
-    })
+    results.append(
+        {
+            "check": "omnishotcut_python_compat",
+            "status": _status_of(py_ok),
+            "value": f"{sys.version_info.major}.{sys.version_info.minor}",
+            "detail": "Requires Python 3.10+" if not py_ok else "Compatible",
+        }
+    )
 
     # PyTorch
     try:
         import torch
+
         pt_ver = torch.__version__
         pt_ok = True  # OmniShotCut works with modern PyTorch
-        results.append({
-            "check": "omnishotcut_pytorch_compat",
-            "status": _status_of(pt_ok),
-            "value": pt_ver,
-            "detail": "Compatible",
-        })
+        results.append(
+            {
+                "check": "omnishotcut_pytorch_compat",
+                "status": _status_of(pt_ok),
+                "value": pt_ver,
+                "detail": "Compatible",
+            }
+        )
     except ImportError:
-        results.append({
-            "check": "omnishotcut_pytorch_compat",
-            "status": "FAIL",
-            "value": None,
-            "detail": "PyTorch not installed — OmniShotCut requires PyTorch",
-        })
+        results.append(
+            {
+                "check": "omnishotcut_pytorch_compat",
+                "status": "FAIL",
+                "value": None,
+                "detail": "PyTorch not installed — OmniShotCut requires PyTorch",
+            }
+        )
 
     # Torchvision
     try:
         import torchvision
+
         tv_ver = torchvision.__version__
-        results.append({
-            "check": "omnishotcut_torchvision_compat",
-            "status": "PASS",
-            "value": tv_ver,
-            "detail": "Compatible",
-        })
+        results.append(
+            {
+                "check": "omnishotcut_torchvision_compat",
+                "status": "PASS",
+                "value": tv_ver,
+                "detail": "Compatible",
+            }
+        )
     except ImportError:
-        results.append({
-            "check": "omnishotcut_torchvision_compat",
-            "status": "FAIL",
-            "value": None,
-            "detail": "torchvision not installed — OmniShotCut requires torchvision",
-        })
+        results.append(
+            {
+                "check": "omnishotcut_torchvision_compat",
+                "status": "FAIL",
+                "value": None,
+                "detail": "torchvision not installed — OmniShotCut requires torchvision",
+            }
+        )
 
     return results
 
@@ -180,27 +194,33 @@ def check_omnishotcut_test_fixtures(check_ffprobe: bool = False) -> list[dict[st
         else:
             missing.append(name)
 
-    results.append({
-        "check": "omnishotcut_fixture_count",
-        "status": "WARNING" if not present else ("WARNING" if missing else "PASS"),
-        "value": len(present),
-        "detail": f"Expected {len(EXPECTED_FIXTURES)}, present {len(present)}, missing {len(missing)}",
-    })
+    results.append(
+        {
+            "check": "omnishotcut_fixture_count",
+            "status": "WARNING" if not present else ("WARNING" if missing else "PASS"),
+            "value": len(present),
+            "detail": f"Expected {len(EXPECTED_FIXTURES)}, present {len(present)}, missing {len(missing)}",
+        }
+    )
 
     if missing:
-        results.append({
-            "check": "omnishotcut_missing_fixtures",
-            "status": "WARNING",
-            "value": missing,
-            "detail": "Run: python scripts/generate_test_fixtures.py",
-        })
+        results.append(
+            {
+                "check": "omnishotcut_missing_fixtures",
+                "status": "WARNING",
+                "value": missing,
+                "detail": "Run: python scripts/generate_test_fixtures.py",
+            }
+        )
     else:
-        results.append({
-            "check": "omnishotcut_missing_fixtures",
-            "status": "PASS",
-            "value": [],
-            "detail": "All test fixtures present",
-        })
+        results.append(
+            {
+                "check": "omnishotcut_missing_fixtures",
+                "status": "PASS",
+                "value": [],
+                "detail": "All test fixtures present",
+            }
+        )
 
     # Optionally ffprobe each fixture
     if check_ffprobe:
@@ -209,9 +229,10 @@ def check_omnishotcut_test_fixtures(check_ffprobe: bool = False) -> list[dict[st
             path = FIXTURES_DIR / name
             try:
                 r = subprocess.run(
-                    ["ffprobe", "-v", "quiet", "-print_format", "json",
-                     "-show_format", str(path)],
-                    capture_output=True, text=True, timeout=15,
+                    ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", str(path)],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
                 )
                 if r.returncode == 0:
                     info = json.loads(r.stdout)
@@ -222,12 +243,14 @@ def check_omnishotcut_test_fixtures(check_ffprobe: bool = False) -> list[dict[st
             except Exception as e:
                 probe_results[name] = str(e)
 
-        results.append({
-            "check": "omnishotcut_fixtures_ffprobe",
-            "status": _status_of(all("OK" in v for v in probe_results.values()), warn=True),
-            "value": probe_results,
-            "detail": "Test videos readable by ffprobe",
-        })
+        results.append(
+            {
+                "check": "omnishotcut_fixtures_ffprobe",
+                "status": _status_of(all("OK" in v for v in probe_results.values()), warn=True),
+                "value": probe_results,
+                "detail": "Test videos readable by ffprobe",
+            }
+        )
 
     return results
 
@@ -239,22 +262,31 @@ def check_omnishotcut_device() -> list[dict[str, Any]]:
     cuda_ok = False
     try:
         import torch
+
         cuda_ok = torch.cuda.is_available()
     except ImportError:
         cpu_ok = False
 
-    results.append({
-        "check": "omnishotcut_cpu_test",
-        "status": "PASS" if cpu_ok else "FAIL",
-        "value": cpu_ok,
-        "detail": "CPU inference available" if cpu_ok else "PyTorch not installed — CPU unavailable",
-    })
-    results.append({
-        "check": "omnishotcut_cuda_test",
-        "status": "PASS" if cuda_ok else "WARNING",
-        "value": cuda_ok,
-        "detail": "GPU inference available" if cuda_ok else "CUDA not available — GPU inference disabled",
-    })
+    results.append(
+        {
+            "check": "omnishotcut_cpu_test",
+            "status": "PASS" if cpu_ok else "FAIL",
+            "value": cpu_ok,
+            "detail": "CPU inference available"
+            if cpu_ok
+            else "PyTorch not installed — CPU unavailable",
+        }
+    )
+    results.append(
+        {
+            "check": "omnishotcut_cuda_test",
+            "status": "PASS" if cuda_ok else "WARNING",
+            "value": cuda_ok,
+            "detail": "GPU inference available"
+            if cuda_ok
+            else "CUDA not available — GPU inference disabled",
+        }
+    )
 
     # Current device selection
     if cuda_ok:
@@ -263,12 +295,14 @@ def check_omnishotcut_device() -> list[dict[str, Any]]:
         device = "cpu"
     else:
         device = "none"
-    results.append({
-        "check": "omnishotcut_selected_device",
-        "status": "WARNING" if device == "cpu" else ("FAIL" if device == "none" else "PASS"),
-        "value": device,
-        "detail": None,
-    })
+    results.append(
+        {
+            "check": "omnishotcut_selected_device",
+            "status": "WARNING" if device == "cpu" else ("FAIL" if device == "none" else "PASS"),
+            "value": device,
+            "detail": None,
+        }
+    )
 
     return results
 
@@ -276,6 +310,7 @@ def check_omnishotcut_device() -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Model readiness
 # ---------------------------------------------------------------------------
+
 
 def compute_model_readiness(checks: list[dict[str, Any]]) -> dict[str, Any]:
     """Derive omnishotcut readiness from collected checks.
@@ -294,18 +329,28 @@ def compute_model_readiness(checks: list[dict[str, Any]]) -> dict[str, Any]:
         statuses[c["check"]] = c.get("status", "NOT_RUN")
 
     if any(statuses.get(k) == "FAIL" for k in critical_checks):
-        return {"model": "omnishotcut", "readiness": "BLOCKED",
-                "reason": "Critical dependencies missing (PyTorch/torchvision/weights)"}
+        return {
+            "model": "omnishotcut",
+            "readiness": "BLOCKED",
+            "reason": "Critical dependencies missing (PyTorch/torchvision/weights)",
+        }
     if any(statuses.get(k) == "WARNING" for k in ["omnishotcut_cuda_test", "omnishotcut_cpu_test"]):
-        return {"model": "omnishotcut", "readiness": "READY_WITH_WARNINGS",
-                "reason": "CPU-only mode — slower, but functional"}
-    return {"model": "omnishotcut", "readiness": "READY",
-            "reason": "All checks passed — ready for inference"}
+        return {
+            "model": "omnishotcut",
+            "readiness": "READY_WITH_WARNINGS",
+            "reason": "CPU-only mode — slower, but functional",
+        }
+    return {
+        "model": "omnishotcut",
+        "readiness": "READY",
+        "reason": "All checks passed — ready for inference",
+    }
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -313,12 +358,15 @@ def main() -> int:
     )
     parser.add_argument("--json", action="store_true", help="Output JSON to stdout")
     parser.add_argument("--output", type=str, default=None, help="Write report to file")
-    parser.add_argument("--check-fixtures", action="store_true",
-                        help="Also ffprobe each test video")
-    parser.add_argument("--load-model", action="store_true",
-                        help="Load OmniShotCut model weights into memory")
-    parser.add_argument("--run-smoke-test", action="store_true",
-                        help="Run inference on the smallest test video")
+    parser.add_argument(
+        "--check-fixtures", action="store_true", help="Also ffprobe each test video"
+    )
+    parser.add_argument(
+        "--load-model", action="store_true", help="Load OmniShotCut model weights into memory"
+    )
+    parser.add_argument(
+        "--run-smoke-test", action="store_true", help="Run inference on the smallest test video"
+    )
     args = parser.parse_args()
 
     # ------------------------------------------------------------------
@@ -350,25 +398,35 @@ def main() -> int:
     if args.load_model:
         try:
             import time
+
             t0 = time.monotonic()
             from models.omnishotcut.adapter import OmniShotCutAdapter
+
             adapter = OmniShotCutAdapter()
             adapter.load()
             elapsed = round(time.monotonic() - t0, 1)
-            report.add_checks([{
-                "check": "omnishotcut_load_model",
-                "status": "PASS",
-                "value": True,
-                "detail": f"Model loaded in {elapsed}s",
-            }])
+            report.add_checks(
+                [
+                    {
+                        "check": "omnishotcut_load_model",
+                        "status": "PASS",
+                        "value": True,
+                        "detail": f"Model loaded in {elapsed}s",
+                    }
+                ]
+            )
             adapter.unload()
         except Exception as e:
-            report.add_checks([{
-                "check": "omnishotcut_load_model",
-                "status": "FAIL",
-                "value": False,
-                "detail": str(e),
-            }])
+            report.add_checks(
+                [
+                    {
+                        "check": "omnishotcut_load_model",
+                        "status": "FAIL",
+                        "value": False,
+                        "detail": str(e),
+                    }
+                ]
+            )
 
     # ------------------------------------------------------------------
     # 4. Optional: smoke test
@@ -378,40 +436,56 @@ def main() -> int:
         if smallest.is_file():
             try:
                 import time
+
                 t0 = time.monotonic()
                 from models.omnishotcut.adapter import OmniShotCutAdapter
+
                 adapter = OmniShotCutAdapter()
                 adapter.load()
-                adapter.predict({
-                    "schema_version": "1.0",
-                    "task_id": "smoke_test",
-                    "video_id": "smoke_test",
-                    "model": {"name": "omnishotcut", "version": "0.1.0"},
-                    "input": {"video_uri": str(smallest)},
-                    "parameters": {"mode": "clean_shot"},
-                })
+                adapter.predict(
+                    {
+                        "schema_version": "1.0",
+                        "task_id": "smoke_test",
+                        "video_id": "smoke_test",
+                        "model": {"name": "omnishotcut", "version": "0.1.0"},
+                        "input": {"video_uri": str(smallest)},
+                        "parameters": {"mode": "clean_shot"},
+                    }
+                )
                 elapsed = round(time.monotonic() - t0, 1)
                 adapter.unload()
-                report.add_checks([{
-                    "check": "omnishotcut_smoke_test",
-                    "status": "PASS",
-                    "value": True,
-                    "detail": f"Smoke test passed in {elapsed}s on {smallest.name}",
-                }])
+                report.add_checks(
+                    [
+                        {
+                            "check": "omnishotcut_smoke_test",
+                            "status": "PASS",
+                            "value": True,
+                            "detail": f"Smoke test passed in {elapsed}s on {smallest.name}",
+                        }
+                    ]
+                )
             except Exception as e:
-                report.add_checks([{
-                    "check": "omnishotcut_smoke_test",
-                    "status": "FAIL",
-                    "value": False,
-                    "detail": str(e),
-                }])
+                report.add_checks(
+                    [
+                        {
+                            "check": "omnishotcut_smoke_test",
+                            "status": "FAIL",
+                            "value": False,
+                            "detail": str(e),
+                        }
+                    ]
+                )
         else:
-            report.add_checks([{
-                "check": "omnishotcut_smoke_test",
-                "status": "NOT_RUN",
-                "value": None,
-                "detail": f"Smoke test video missing: {smallest}",
-            }])
+            report.add_checks(
+                [
+                    {
+                        "check": "omnishotcut_smoke_test",
+                        "status": "NOT_RUN",
+                        "value": None,
+                        "detail": f"Smoke test video missing: {smallest}",
+                    }
+                ]
+            )
 
     # ------------------------------------------------------------------
     # 5. Finalize + model readiness
@@ -420,12 +494,14 @@ def main() -> int:
 
     # Append model_readiness to checks (not part of overall status)
     readiness = compute_model_readiness(report.checks)
-    report.checks.append({
-        "check": "model_readiness_omnishotcut",
-        "status": readiness["readiness"],
-        "value": readiness["readiness"],
-        "detail": readiness["reason"],
-    })
+    report.checks.append(
+        {
+            "check": "model_readiness_omnishotcut",
+            "status": readiness["readiness"],
+            "value": readiness["readiness"],
+            "detail": readiness["reason"],
+        }
+    )
 
     # ------------------------------------------------------------------
     # 6. Output

@@ -1,15 +1,14 @@
 """Unit tests for system_info — CPU, OS, memory without side effects."""
 
-import platform
-import pytest
-
 from core.environment.system_info import collect_system_info
 
 
 def test_collect_system_info_returns_list():
     results = collect_system_info()
     assert isinstance(results, list)
-    assert len(results) >= 8  # at minimum OS, arch, python, venv, cpu_model, cores×2, memory×2, psutil
+    assert (
+        len(results) >= 8
+    )  # at minimum OS, arch, python, venv, cpu_model, cores×2, memory×2, psutil
 
 
 def test_os_check_exists():

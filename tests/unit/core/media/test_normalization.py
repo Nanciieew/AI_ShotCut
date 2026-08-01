@@ -6,14 +6,8 @@ Tests that do NOT require real FFmpeg/FFprobe:
   - Duration delta tolerance
 """
 
-import os
-import tempfile
-
-import pytest
-
-from core.media.schemas import FFprobeResult, NormalizationConfig, NormalizationResult
 from core.media.normalization import validate_normalization
-from core.media.exceptions import NormalizationValidationError
+from core.media.schemas import FFprobeResult, NormalizationConfig
 
 
 def _make_probe(

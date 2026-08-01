@@ -7,11 +7,9 @@ No task should shell out to ffprobe directly.
 import json
 import os
 import subprocess
-from pathlib import Path
-from typing import Optional
 
-from core.media.schemas import FFprobeResult
 from core.media.exceptions import FFprobeError
+from core.media.schemas import FFprobeResult
 
 
 def run_ffprobe(
@@ -37,8 +35,11 @@ def run_ffprobe(
         raise FFprobeError(f"Video file not found: {video_path}")
 
     cmd = [
-        ffprobe_bin, "-v", "quiet",
-        "-print_format", "json",
+        ffprobe_bin,
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
         "-show_format",
         "-show_streams",
         str(video_path),
@@ -47,22 +48,18 @@ def run_ffprobe(
     try:
         result = subprocess.run(
             cmd,
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        raise FFprobeError(
-            f"ffprobe timed out after {timeout}s: {video_path}"
-        )
+        raise FFprobeError(f"ffprobe timed out after {timeout}s: {video_path}")
     except FileNotFoundError:
-        raise FFprobeError(
-            f"ffprobe not found: {ffprobe_bin}. Is FFmpeg installed?"
-        )
+        raise FFprobeError(f"ffprobe not found: {ffprobe_bin}. Is FFmpeg installed?")
 
     if result.returncode != 0:
         stderr_tail = result.stderr[-500:] if result.stderr else "(no stderr)"
-        raise FFprobeError(
-            f"ffprobe exited with code {result.returncode}: {stderr_tail}"
-        )
+        raise FFprobeError(f"ffprobe exited with code {result.returncode}: {stderr_tail}")
 
     try:
         info = json.loads(result.stdout)
@@ -74,7 +71,7 @@ def run_ffprobe(
 
 def probe_video(
     video_path: str,
-    output_dir: Optional[str] = None,
+    output_dir: str | None = None,
     label: str = "probe",
     ffprobe_bin: str = "ffprobe",
     timeout: int = 30,
@@ -106,6 +103,7 @@ def probe_video(
 # ---------------------------------------------------------------------------
 # Internal
 # ---------------------------------------------------------------------------
+
 
 def _parse_ffprobe_output(info: dict) -> FFprobeResult:
     """Parse raw ffprobe JSON into a structured FFprobeResult."""

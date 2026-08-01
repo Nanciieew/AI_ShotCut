@@ -1,7 +1,6 @@
 """Artifact schema — index entry for a saved pipeline artifact."""
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -26,7 +25,5 @@ class Artifact(BaseModel):
     )
     format: str = Field(..., description="File format: json, npy, npz, mp4, wav")
     schema_version: str = Field(default="1.0", description="Schema version used")
-    sha256: Optional[str] = Field(
-        default=None, description="SHA-256 hash for integrity verification"
-    )
+    sha256: str | None = Field(default=None, description="SHA-256 hash for integrity verification")
     created_at: datetime = Field(default_factory=datetime.utcnow)

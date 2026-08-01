@@ -6,7 +6,6 @@ and input fingerprinting per the architecture spec §17.
 
 import hashlib
 from pathlib import Path
-from typing import Optional
 
 
 def sha256_hex(data: bytes) -> str:
@@ -26,7 +25,7 @@ def cache_key(
     model_version: str,
     parameters: dict,
     schema_version: str,
-    code_revision: Optional[str] = None,
+    code_revision: str | None = None,
 ) -> str:
     """Build a deterministic cache key for artifact reuse.
 

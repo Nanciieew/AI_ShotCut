@@ -1,7 +1,5 @@
 """Final result schema — the complete pipeline output."""
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 from schemas.scene import Scene, SceneEvidence
@@ -23,7 +21,7 @@ class FinalResult(BaseModel):
     subtitles: list[SubtitleSegment] = Field(default_factory=list)
     scenes: list[Scene] = Field(default_factory=list)
     scene_evidence: list[SceneEvidence] = Field(default_factory=list)
-    result_uri: Optional[str] = Field(
+    result_uri: str | None = Field(
         default=None,
         description="Storage URI for the complete final_result.json artifact",
     )

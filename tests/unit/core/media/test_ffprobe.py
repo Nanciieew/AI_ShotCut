@@ -7,15 +7,11 @@ Tests that do NOT require actual FFprobe binary:
 """
 
 import json
-import os
-import tempfile
 
 import pytest
 
-from core.media.ffprobe import _parse_ffprobe_output, run_ffprobe, probe_video
-from core.media.schemas import FFprobeResult
 from core.media.exceptions import FFprobeError
-
+from core.media.ffprobe import _parse_ffprobe_output, run_ffprobe
 
 # ---------------------------------------------------------------------------
 # Sample ffprobe JSON fixtures
@@ -110,6 +106,7 @@ SAMPLE_FFPROBE_JSON_NEGATIVE_START = {
 # Parsing tests
 # ---------------------------------------------------------------------------
 
+
 class TestParseFFprobeOutput:
     def test_basic_video_stream(self):
         result = _parse_ffprobe_output(SAMPLE_FFPROBE_JSON)
@@ -187,6 +184,7 @@ class TestParseFFprobeOutput:
 # Error handling tests (without real ffprobe)
 # ---------------------------------------------------------------------------
 
+
 class TestFFprobeErrorHandling:
     def test_missing_file(self):
         with pytest.raises(FFprobeError, match="not found"):
@@ -204,6 +202,7 @@ class TestFFprobeErrorHandling:
 # ---------------------------------------------------------------------------
 # to_dict / serialization tests
 # ---------------------------------------------------------------------------
+
 
 class TestFFprobeSerialization:
     def test_to_dict_json_roundtrip(self):

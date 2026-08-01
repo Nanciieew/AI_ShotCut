@@ -34,6 +34,7 @@ def test_gpu_count_when_no_cuda():
 def test_graceful_without_torch(monkeypatch):
     """Simulate PyTorch not installed."""
     import core.environment.pytorch_info as mod
+
     original_import = __builtins__["__import__"]
 
     def fake_import(name, *args, **kwargs):
@@ -44,6 +45,7 @@ def test_graceful_without_torch(monkeypatch):
     monkeypatch.setattr("builtins.__import__", fake_import)
     # Need to reload the module to re-run the import guard
     import importlib
+
     importlib.reload(mod)
     results = collect_pytorch_info()
     pt = next(c for c in results if c["check"] == "pytorch_installed")

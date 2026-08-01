@@ -23,9 +23,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.stop:
-        subprocess.run(
-            ["docker-compose", "down"], cwd=str(PROJECT_ROOT)
-        )
+        subprocess.run(["docker-compose", "down"], cwd=str(PROJECT_ROOT))
         return 0
 
     cmd = ["docker-compose", "up", "-d"]

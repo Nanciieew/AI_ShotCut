@@ -11,18 +11,17 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from workers.celery_app import app
-from core.database.session_sync import get_sync_session
+from core.artifacts import ArtifactProducer
+from core.artifacts.writer import ArtifactWriter
+from core.database.models import ModelRun, Shot
 from core.database.repositories import (
+    ArtifactRepository,
     TaskRepository,
     VideoRepository,
-    ArtifactRepository,
 )
-from core.database.models import ModelRun, Shot
-from core.artifacts.writer import ArtifactWriter
-from core.artifacts import ArtifactProducer
-from core.logging.context import set_task_context, clear_task_context
-
+from core.database.session_sync import get_sync_session
+from core.logging.context import clear_task_context, set_task_context
+from workers.celery_app import app
 
 # ---------------------------------------------------------------------------
 # Adapter registry — maps model_name → Adapter class
@@ -32,6 +31,7 @@ _ADAPTER_REGISTRY: dict[str, type] = {}
 
 try:
     from models.omnishotcut.adapter import OmniShotCutAdapter
+
     _ADAPTER_REGISTRY["omnishotcut"] = OmniShotCutAdapter
 except ImportError:
     pass
@@ -52,17 +52,19 @@ def _get_adapter_class(model_name: str):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _resolve_uri(uri: str, storage_root: str) -> str:
     """Convert storage:// URI to local absolute path."""
     prefix = "storage://"
     if uri.startswith(prefix):
-        return os.path.join(storage_root, uri[len(prefix):])
+        return os.path.join(storage_root, uri[len(prefix) :])
     return uri
 
 
 # ---------------------------------------------------------------------------
 # Task
 # ---------------------------------------------------------------------------
+
 
 @app.task(name="shot.detect", bind=True, max_retries=2)
 def detect_shots(
@@ -138,7 +140,10 @@ def detect_shots(
                 "task_id": task_id,
                 "video_id": video_id,
                 "status": "FAILED",
-                "error": {"code": "FILE_NOT_FOUND", "message": f"Normalized video missing: {video_path}"},
+                "error": {
+                    "code": "FILE_NOT_FOUND",
+                    "message": f"Normalized video missing: {video_path}",
+                },
             }
 
         # --- 3. Update task → RUNNING ---
@@ -196,7 +201,11 @@ def detect_shots(
             "task_id": task_id,
             "video_id": video_id,
             "model": {"name": model_name, "version": adapter.version},
-            "input": {"video_uri": f"storage://{normalized_uri[len('storage://'):]}" if normalized_uri.startswith("storage://") else normalized_uri},
+            "input": {
+                "video_uri": f"storage://{normalized_uri[len('storage://') :]}"
+                if normalized_uri.startswith("storage://")
+                else normalized_uri
+            },
             "parameters": {"mode": "clean_shot"},
         }
 
@@ -300,7 +309,9 @@ def detect_shots(
         session.commit()
 
     project_id = video.project_id if video else "default"
-    artifact_base = f"projects/{project_id}/videos/{video_id}/artifacts/{model_name}/{adapter.version}"
+    artifact_base = (
+        f"projects/{project_id}/videos/{video_id}/artifacts/{model_name}/{adapter.version}"
+    )
     shots_rel = f"{artifact_base}/shots.json"
 
     producer = ArtifactProducer(

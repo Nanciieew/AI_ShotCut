@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -28,12 +27,12 @@ class Task(BaseModel):
         description="Type of task (e.g. full_video_analysis)",
     )
     status: TaskStatus = Field(default=TaskStatus.PENDING)
-    stage: Optional[str] = Field(
+    stage: str | None = Field(
         default=None,
         description="Current pipeline stage (e.g. detect_shots)",
     )
     progress: int = Field(default=0, ge=0, le=100, description="Progress percentage")
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
-    error: Optional[str] = Field(default=None, description="Error message if failed")
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error: str | None = Field(default=None, description="Error message if failed")

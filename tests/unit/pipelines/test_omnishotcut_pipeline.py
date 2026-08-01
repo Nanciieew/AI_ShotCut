@@ -1,11 +1,6 @@
 """Unit tests for OmniShotCut pipeline service — no real model/ffmpeg."""
 
 import hashlib
-import tempfile
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-import pytest
 
 from pipelines.services.omnishotcut_pipeline import (
     PipelineResult,

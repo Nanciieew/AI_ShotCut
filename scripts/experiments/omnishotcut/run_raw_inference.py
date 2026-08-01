@@ -29,12 +29,20 @@ def get_fps(video_path: str) -> tuple[int, int]:
     try:
         r = subprocess.run(
             [
-                "ffprobe", "-v", "quiet",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=r_frame_rate",
-                "-of", "json", video_path,
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=r_frame_rate",
+                "-of",
+                "json",
+                video_path,
             ],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         info = json.loads(r.stdout)
         fps_str = info["streams"][0]["r_frame_rate"]
@@ -49,13 +57,21 @@ def get_frame_count(video_path: str) -> int:
     try:
         r = subprocess.run(
             [
-                "ffprobe", "-v", "quiet",
-                "-select_streams", "v:0",
-                "-count_frames", "-show_entries",
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-select_streams",
+                "v:0",
+                "-count_frames",
+                "-show_entries",
                 "stream=nb_read_frames",
-                "-of", "json", video_path,
+                "-of",
+                "json",
+                video_path,
             ],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         info = json.loads(r.stdout)
         return int(info["streams"][0]["nb_read_frames"])
@@ -78,7 +94,7 @@ def main() -> int:
 
     if not videos or (len(videos) == 1 and not videos[0].exists()):
         print(f"[SKIP] No test videos found in {VIDEOS_DIR}")
-        print(f"       Place .mp4 files there and re-run.")
+        print("       Place .mp4 files there and re-run.")
         return 0
 
     # Load model once
@@ -96,7 +112,7 @@ def main() -> int:
     for vp in videos:
         vpath = str(vp)
         vname = vp.name
-        print(f"\n{'='*50}")
+        print(f"\n{'=' * 50}")
         print(f"Video: {vname} ({vp.stat().st_size / 1024 / 1024:.1f} MB)")
 
         fps_num, fps_den = get_fps(vpath)
@@ -144,9 +160,9 @@ def main() -> int:
         results.append(entry)
 
     # Summary
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print("SUMMARY")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
     for r in results:
         status = "OK" if r["error"] is None else "FAIL"
         print(f"  {r['video']:<30} {status}  {r['shot_count']:>4} shots  {r['runtime_s']:>6.1f}s")

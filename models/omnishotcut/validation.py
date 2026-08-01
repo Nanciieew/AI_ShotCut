@@ -50,9 +50,7 @@ def validate_shot_output(shots_json: dict) -> dict:
             shot = Shot.model_validate(raw)
         except Exception as e:
             report["valid"] = False
-            report["errors"].append(
-                f"Shot[{i}] failed Schema validation: {e}"
-            )
+            report["errors"].append(f"Shot[{i}] failed Schema validation: {e}")
             continue
 
         # Check time continuity: consecutive shots should have no gaps
@@ -73,18 +71,14 @@ def validate_shot_output(shots_json: dict) -> dict:
         if shot.end_frame_exclusive is not None and shot.start_frame is not None:
             if shot.end_frame_exclusive <= shot.start_frame:
                 report["valid"] = False
-                report["errors"].append(
-                    f"Shot[{i}]: end_frame_exclusive <= start_frame"
-                )
+                report["errors"].append(f"Shot[{i}]: end_frame_exclusive <= start_frame")
 
         # Check forbidden fields
         forbidden = ["action_score", "plot_score", "action_evidence", "plot_evidence"]
         for fk in forbidden:
             if fk in raw:
                 report["valid"] = False
-                report["errors"].append(
-                    f"Shot[{i}] contains forbidden field: {fk}"
-                )
+                report["errors"].append(f"Shot[{i}] contains forbidden field: {fk}")
 
     return report
 

@@ -3,18 +3,16 @@
 Markers: local, model, slow
 """
 
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
 
 from pipelines.services.omnishotcut_pipeline import run_omnishotcut_pipeline
 
-
 # ---------------------------------------------------------------------------
 # Test configuration
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def hard_cut_video():
@@ -38,6 +36,7 @@ def output_root(tmp_path):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.local
 @pytest.mark.model
@@ -70,7 +69,14 @@ class TestFullPipeline:
         assert result.status == "SUCCEEDED"
 
         # Check file existence
-        base = output_root / "projects" / "local_validation" / "videos" / "test_artifacts" / "artifacts"
+        base = (
+            output_root
+            / "projects"
+            / "local_validation"
+            / "videos"
+            / "test_artifacts"
+            / "artifacts"
+        )
 
         norm_dir = list((base / "video_normalization").glob("*/"))
         assert len(norm_dir) > 0, "No normalization artifact dir found"

@@ -7,11 +7,9 @@ Startup validation: if any required setting is missing, the app
 fails fast with a clear error message.
 """
 
-import os
 import sys
 from functools import lru_cache
-from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -128,9 +126,7 @@ class Settings(BaseSettings):
                 # Heuristic: look for default/weak passwords in URL
                 for weak in ("postgres:postgres", "password:password", "admin:admin"):
                     if weak in self.database_url:
-                        warnings.append(
-                            f"Weak database credentials detected in DATABASE_URL."
-                        )
+                        warnings.append("Weak database credentials detected in DATABASE_URL.")
                         break
 
         return warnings
@@ -139,6 +135,7 @@ class Settings(BaseSettings):
 # ------------------------------------------------------------------
 # Singleton
 # ------------------------------------------------------------------
+
 
 @lru_cache
 def get_settings() -> Settings:

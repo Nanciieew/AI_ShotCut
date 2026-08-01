@@ -4,8 +4,6 @@ Also defines SceneEvidence, the ONLY allowed evidence types for
 computing scene_score. action_score and plot_score are FORBIDDEN.
 """
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 
@@ -18,22 +16,12 @@ class SceneEvidence(BaseModel):
     """
 
     scene_id: str = Field(..., description="Associated scene")
-    visual_continuity: Optional[float] = Field(
-        default=None, ge=0.0, le=1.0
-    )
-    character_continuity: Optional[float] = Field(
-        default=None, ge=0.0, le=1.0
-    )
-    location_continuity: Optional[float] = Field(
-        default=None, ge=0.0, le=1.0
-    )
-    subtitle_continuity: Optional[float] = Field(
-        default=None, ge=0.0, le=1.0
-    )
-    audio_continuity: Optional[float] = Field(
-        default=None, ge=0.0, le=1.0
-    )
-    temporal_gap_ms: Optional[int] = Field(
+    visual_continuity: float | None = Field(default=None, ge=0.0, le=1.0)
+    character_continuity: float | None = Field(default=None, ge=0.0, le=1.0)
+    location_continuity: float | None = Field(default=None, ge=0.0, le=1.0)
+    subtitle_continuity: float | None = Field(default=None, ge=0.0, le=1.0)
+    audio_continuity: float | None = Field(default=None, ge=0.0, le=1.0)
+    temporal_gap_ms: int | None = Field(
         default=None, ge=0, description="Gap to previous scene in milliseconds"
     )
 
@@ -49,12 +37,10 @@ class Scene(BaseModel):
     index: int = Field(..., ge=0, description="Zero-based scene index within the video")
     start_ms: int = Field(..., ge=0, description="Start time in milliseconds")
     end_ms: int = Field(..., ge=0, description="End time in milliseconds (exclusive)")
-    shot_ids: list[str] = Field(
-        default_factory=list, description="Ordered shot IDs in this scene"
-    )
-    boundary_confidence: Optional[float] = Field(
+    shot_ids: list[str] = Field(default_factory=list, description="Ordered shot IDs in this scene")
+    boundary_confidence: float | None = Field(
         default=None, ge=0.0, le=1.0, description="Scene boundary detection confidence"
     )
-    scene_score: Optional[float] = Field(
+    scene_score: float | None = Field(
         default=None, ge=0.0, le=1.0, description="Computed scene score [0, 1]"
     )

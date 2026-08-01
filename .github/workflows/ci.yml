@@ -51,7 +51,7 @@ jobs:
           pip install mypy types-pyyaml types-redis
 
       - name: MyPy
-        run: mypy . --ignore-missing-imports
+        run: mypy . --ignore-missing-imports --explicit-package-bases
 
   test:
     name: Tests (Python ${{ matrix.python-version }})
@@ -75,7 +75,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install dependencies
-        run: pip install -r requirements/api.txt pytest pytest-asyncio pytest-cov httpx
+        run: |
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements/test.txt
 
       - name: Pytest with coverage
         run: pytest --cov=. --cov-report=term-missing -q
@@ -91,7 +93,9 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: pip install -r requirements/api.txt pytest
+        run: |
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements/test.txt
 
       - name: Run schema tests
         run: pytest tests/ -k "schema" -v
@@ -108,6 +112,9 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements/worker.txt
+
+      - name: Create data directory
+        run: mkdir -p ./data
 
       - name: Check Alembic upgrade (head)
         run: |

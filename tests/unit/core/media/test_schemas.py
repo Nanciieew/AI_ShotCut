@@ -1,6 +1,7 @@
 """Unit tests for core.media.schemas — FFprobeResult, NormalizationConfig, etc."""
 
 import pytest
+
 from core.media.schemas import FFprobeResult, NormalizationConfig, NormalizationResult
 
 
