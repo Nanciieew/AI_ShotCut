@@ -104,6 +104,29 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, ge=1, le=65535, description="API server port.")
 
     # ------------------------------------------------------------------
+    # Keyframe Extraction
+    # ------------------------------------------------------------------
+    keyframe_extraction_available: bool = Field(
+        default=False,
+        description="Whether keyframe extraction infrastructure is available.",
+    )
+    keyframe_format: str = Field(
+        default="jpeg",
+        description="Keyframe image format: jpeg or png.",
+    )
+    keyframe_quality: int = Field(
+        default=85,
+        ge=1,
+        le=100,
+        description="JPEG quality (1-100). Ignored for PNG.",
+    )
+    keyframe_max_long_side: int = Field(
+        default=672,
+        ge=64,
+        description="Maximum long-side pixel count. 672 is divisible by DINOv2 patch size 14.",
+    )
+
+    # ------------------------------------------------------------------
     # Validation
     # ------------------------------------------------------------------
 

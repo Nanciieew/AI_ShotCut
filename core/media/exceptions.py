@@ -19,3 +19,16 @@ class NormalizationError(MediaError):
 
 class NormalizationValidationError(MediaError):
     """Normalization output failed post-validation checks."""
+
+
+class KeyframeExtractionError(MediaError):
+    """Keyframe extraction failed (decode, encode, or I/O error)."""
+
+
+class NonRetryableTaskError(Exception):
+    """Raised by Celery tasks on non-retryable failures.
+
+    Unlike returning a {"status": "FAILED"} dict (which Celery treats as
+    a successful return and continues the chain), this exception causes
+    Celery to mark the task as FAILURE and stops the chain.
+    """

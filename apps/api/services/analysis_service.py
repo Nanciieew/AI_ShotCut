@@ -1,16 +1,17 @@
 """Analysis orchestration service — submits Celery chains for video analysis.
 
 Handles:
-  - Creating Project/Video/Task/Artifact records
-  - Submitting Celery task chains
-  - Validating preconditions (e.g., normalized video must exist before shot detection)
+  - Creating Project/Video/Task records
+  - Delegating to core.orchestration for Celery chain construction
+  - Validating preconditions
+
+Per CLAUDE.md §2.1, this service MUST NOT directly define task execution order.
+It delegates to core.orchestration canvas builders instead.
 """
 
 import uuid
 
-from celery import chain
-
-from workers.celery_app import get_celery_app
+from core.orchestration import build_omnishotcut_canvas
 
 
 def _new_id() -> str:
@@ -21,10 +22,25 @@ async def submit_full_pipeline(
     db,
     video_path: str,
     project_id: str | None = None,
+    extract_keyframes: bool = False,
 ) -> dict:
-    """Create DB records and submit the normalize_video → detect_shots chain.
+    """Create DB records and submit the analysis pipeline chain.
 
-    Returns:
+    Parameters
+    ----------
+    db : AsyncSession
+        Database session (async).
+    video_path : str
+        Path to the source video file.
+    project_id : Optional[str]
+        Project identifier (default: "default").
+    extract_keyframes : bool
+        When True, include the keyframe extraction step after shot detection.
+        Default False.
+
+    Returns
+    -------
+    dict
         {task_id, video_id, project_id, status, stage, message}
     """
     from core.database.repositories import (
@@ -60,19 +76,14 @@ async def submit_full_pipeline(
         )
         session.commit()
 
-    # Submit Celery chain: normalize_video → detect_shots
+    # Build and submit Celery chain via orchestration layer
     try:
-        celery_app = get_celery_app()
-        result = chain(
-            celery_app.signature(
-                "video.normalize",
-                args=(task_id, vid),
-            ),
-            celery_app.signature(
-                "shot.detect",
-                args=(task_id, vid, "omnishotcut"),
-            ),
-        ).apply_async()
+        canvas = build_omnishotcut_canvas(
+            task_id=task_id,
+            video_id=vid,
+            extract_keyframes=extract_keyframes,
+        )
+        result = canvas.apply_async()
         celery_task_id = result.id
 
         # Update celery_task_id
@@ -94,6 +105,11 @@ async def submit_full_pipeline(
             "error": {"code": "CELERY_DISPATCH_FAILED", "message": str(e)},
         }
 
+    steps_msg = "normalize_video → detect_shots"
+    if extract_keyframes:
+        steps_msg += " → extract_keyframes"
+    steps_msg += " → pipeline_complete"
+
     return {
         "task_id": task_id,
         "video_id": vid,
@@ -102,7 +118,7 @@ async def submit_full_pipeline(
         "stage": "normalize_video",
         "progress": 0,
         "celery_task_id": celery_task_id,
-        "message": "Pipeline submitted: normalize_video → detect_shots",
+        "message": f"Pipeline submitted: {steps_msg}",
     }
 
 

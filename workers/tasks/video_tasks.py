@@ -24,7 +24,11 @@ from core.database.repositories import (
 )
 from core.database.session_sync import get_sync_session
 from core.logging.context import clear_task_context, set_task_context
-from core.media.exceptions import FFmpegError, FFprobeError
+from core.media.exceptions import (
+    FFmpegError,
+    FFprobeError,
+    NonRetryableTaskError,
+)
 from core.media.ffmpeg import build_normalize_command, get_ffmpeg_version, run_ffmpeg
 from core.media.ffprobe import probe_video
 from core.media.normalization import validate_normalization
@@ -72,17 +76,17 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
         video = video_repo.get(video_id)
         if video is None:
             clear_task_context()
-            return _fail(task_id, video_id, "VIDEO_NOT_FOUND", f"Video {video_id} not in DB")
+            raise NonRetryableTaskError(f"[VIDEO_NOT_FOUND] Video {video_id} not in DB")
 
         source_uri = video.source_uri
         if not source_uri:
             clear_task_context()
-            return _fail(task_id, video_id, "NO_SOURCE_URI", "Video has no source_uri")
+            raise NonRetryableTaskError("[NO_SOURCE_URI] Video has no source_uri")
 
         source_path = _resolve_uri(source_uri, storage_root)
         if not os.path.exists(source_path):
             clear_task_context()
-            return _fail(task_id, video_id, "SOURCE_NOT_FOUND", f"File not found: {source_path}")
+            raise NonRetryableTaskError(f"[SOURCE_NOT_FOUND] File not found: {source_path}")
 
         # --- 2. Update task → RUNNING ---
         task_repo.update_status(task_id, "RUNNING")
@@ -137,7 +141,7 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
             TaskRepository(session).set_error(task_id, "VIDEO_PROBE_FAILED", str(e))
             session.commit()
         clear_task_context()
-        return _fail(task_id, video_id, "VIDEO_PROBE_FAILED", str(e))
+        raise NonRetryableTaskError(f"[VIDEO_PROBE_FAILED] {e}")
 
     # Save probe_before as artifact file
     _write_json_atomic(probe_before_abs, probe_before.to_dict())
@@ -159,14 +163,14 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
 
     t0 = time.monotonic()
     try:
-        run_ffmpeg(cmd, timeout=600, description="video normalization")
+        run_ffmpeg(cmd, timeout=3600, description="video normalization")
     except FFmpegError as e:
         _remove_if_exists(normalized_abs)
         with get_sync_session() as session:
             TaskRepository(session).set_error(task_id, "VIDEO_NORMALIZATION_FAILED", str(e))
             session.commit()
         clear_task_context()
-        return _fail(task_id, video_id, "VIDEO_NORMALIZATION_FAILED", str(e))
+        raise NonRetryableTaskError(f"[VIDEO_NORMALIZATION_FAILED] {e}")
 
     norm_runtime_ms = int((time.monotonic() - t0) * 1000)
 
@@ -179,8 +183,8 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
             )
             session.commit()
         clear_task_context()
-        return _fail(
-            task_id, video_id, "VIDEO_NORMALIZATION_FAILED", "Output file not found after ffmpeg"
+        raise NonRetryableTaskError(
+            "[VIDEO_NORMALIZATION_FAILED] Output file not found after ffmpeg"
         )
 
     # --- 6. FFprobe output → probe_after.json ---
@@ -200,7 +204,7 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
             TaskRepository(session).set_error(task_id, "VIDEO_PROBE_FAILED", str(e))
             session.commit()
         clear_task_context()
-        return _fail(task_id, video_id, "VIDEO_PROBE_FAILED", str(e))
+        raise NonRetryableTaskError(f"[VIDEO_PROBE_FAILED] {e}")
 
     _write_json_atomic(probe_after_abs, probe_after.to_dict())
 
@@ -218,8 +222,8 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
             )
             session.commit()
         clear_task_context()
-        return _fail(
-            task_id, video_id, "NORMALIZED_VIDEO_VALIDATION_FAILED", "; ".join(validation_errors)
+        raise NonRetryableTaskError(
+            "[NORMALIZED_VIDEO_VALIDATION_FAILED] " + "; ".join(validation_errors)
         )
 
     # --- 8. Compute SHA256 & write manifests ---
@@ -333,16 +337,14 @@ def normalize_video(self, task_id: str, video_id: str) -> dict:
             normalized_uri=norm_uri,
         )
 
-        # Update ModelRun
+        # Update ModelRun — DO NOT mark task SUCCEEDED (only final.pipeline_complete does)
         mr = session.get(ModelRun, run_id)
         if mr:
             mr.status = "SUCCEEDED"
             mr.runtime_ms = norm_runtime_ms
             mr.finished_at = datetime.now(timezone.utc)
 
-        # Mark task as SUCCEEDED
-        task_repo.update_status(task_id, "SUCCEEDED")
-        task_repo.update_progress(task_id, 40, stage="normalize_video")
+        task_repo.update_progress(task_id, 30, stage="normalize_video")
         session.commit()
 
     clear_task_context()

@@ -44,6 +44,12 @@ def main() -> int:
         default=None,
         help="Custom video_id (default: derived from filename)",
     )
+    parser.add_argument(
+        "--extract-keyframes",
+        action="store_true",
+        default=False,
+        help="Extract 25%%, 50%%, 75%% keyframes per shot after shot detection",
+    )
     args = parser.parse_args()
 
     # --- Locate video ---
@@ -83,6 +89,7 @@ def main() -> int:
         source_video_path=video_path,
         output_root=output_root,
         mode=args.mode,
+        extract_keyframes=args.extract_keyframes,
     )
     wall_s = time.monotonic() - t0
 
@@ -131,6 +138,12 @@ def main() -> int:
     print(f"    Artifact URI:  {result.shots_artifact_uri}")
     print(f"    SHA256:        {result.shots_sha256}")
     print()
+
+    if result.keyframes_artifact_uri:
+        print("  [Keyframes]")
+        print(f"    Artifact URI:  {result.keyframes_artifact_uri}")
+        print(f"    Image count:   {result.keyframe_image_count or 0}")
+        print()
 
     if result.warnings:
         print("  [Warnings]")
