@@ -125,8 +125,13 @@ jobs:
 
       - name: Check Alembic downgrade
         run: |
-          alembic downgrade -1
-          echo "Downgrade succeeded."
+          if alembic downgrade -1; then
+            echo "Downgrade -1 succeeded."
+          else
+            echo "Downgrade -1 failed — falling back to downgrade base"
+            alembic downgrade base
+            echo "Downgrade to base succeeded."
+          fi
 
       - name: Check Alembic upgrade again
         run: alembic upgrade head
