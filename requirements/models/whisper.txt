@@ -1,8 +1,0 @@
-# Whisper model dependencies (placeholder)
-# Install when this model is enabled in registry:
-#   pip install -r requirements/models/whisper.txt
-
--r ../worker.txt
-
-# TODO: Add actual Whisper dependencies after repository review
-# openai-whisper>=20231117
