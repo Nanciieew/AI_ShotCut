@@ -19,6 +19,7 @@ def build_omnishotcut_canvas(
     task_id: str,
     video_id: str,
     extract_keyframes: bool = False,
+    transcribe: bool = False,
 ) -> chain:
     """Build the OmniShotCut analysis pipeline canvas.
 
@@ -30,7 +31,10 @@ def build_omnishotcut_canvas(
         Video to process.
     extract_keyframes : bool
         When True, insert the keyframe extraction step after shot detection.
-        Default False (西游 pipeline does not activate this yet).
+        Default False.
+    transcribe : bool
+        When True, insert the Whisper subtitle transcription step after
+        shot detection. Default False.
 
     Returns
     -------
@@ -53,6 +57,16 @@ def build_omnishotcut_canvas(
             queue="shot",
         ),
     ]
+
+    if transcribe:
+        steps.append(
+            app.signature(
+                "subtitle.transcribe",
+                args=(task_id, video_id),
+                immutable=True,
+                queue="subtitle",
+            )
+        )
 
     if extract_keyframes:
         steps.append(
