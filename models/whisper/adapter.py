@@ -1,126 +1,71 @@
-"""Whisper model adapter — speech-to-text transcription.
+﻿"""Whisper/Doubao adapter — speech-to-text via Doubao (豆包) ASR API.
 
-Implements the BaseModelAdapter interface for OpenAI Whisper.
+Replaces local Whisper model with Doubao cloud API.
 Follows IO_Rule §4.2 contract.
 
-Weights: auto-download from HuggingFace Hub (openai/whisper-base by default).
-         Override with WHISPER_MODEL env var (tiny/base/small/medium/large-v3).
+API key: set via DOUBAO_ASR_API_KEY env var or core.config.Settings.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
-import tempfile
 import time
-import uuid
-from pathlib import Path
 from typing import Any
 
 from models.base.adapter import BaseModelAdapter
-
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-FIXED_COMMIT = "v20240930"  # openai/whisper release tag
-DEFAULT_MODEL = "base"  # CPU-friendly default; override with WHISPER_MODEL env
-HUGGINGFACE_REPO = "openai/whisper-base"  # HF pattern — dynamic by model size
-
-
-# ---------------------------------------------------------------------------
-# Adapter
-# ---------------------------------------------------------------------------
+from models.whisper.providers.doubao_asr import DoubaoASRProvider
 
 
 class WhisperAdapter(BaseModelAdapter):
-    """Whisper speech-to-text adapter.
+    """Speech-to-text adapter using Doubao ASR API.
 
-    Loads a Whisper model from HuggingFace, runs transcription on an
-    audio file extracted from the normalized video, and returns timed
-    subtitle segments per IO_Rule §4.2.
-
-    Parameters
-    ----------
-    model_size : str
-        Whisper model size: tiny, base, small, medium, large-v3.
-        Default from WHISPER_MODEL env var, or "base".
+    Extracts audio from normalized video, sends to Doubao cloud API,
+    and returns timed subtitle segments per IO_Rule §4.2.
     """
 
     name = "whisper"
     version = "1.0.0"
 
-    def __init__(self, model_size: str | None = None) -> None:
-        self._model_size = model_size or os.getenv("WHISPER_MODEL", DEFAULT_MODEL)
-        self._model: Any = None
+    def __init__(self) -> None:
+        self._provider: DoubaoASRProvider | None = None
         self._loaded = False
+        self._last_segments: list[dict] = []
 
     # ------------------------------------------------------------------
     # BaseModelAdapter interface
     # ------------------------------------------------------------------
 
-    def load(self) -> None:
-        """Load the Whisper model from HuggingFace Hub."""
+    def load(self, api_key: str | None = None) -> None:
         if self._loaded:
             return
-
-        import whisper
-
-        model_tag = getattr(self, "_model_size", DEFAULT_MODEL)
-        print(f"Loading Whisper {model_tag} from HuggingFace ...")
-        self._model = whisper.load_model(model_tag)
+        key = api_key or self._resolve_api_key()
+        if not key:
+            raise RuntimeError(
+                "DOUBAO_ASR_API_KEY not set. "
+                "Set it via env var or core.config.Settings.doubao_asr_api_key."
+            )
+        self._provider = DoubaoASRProvider(api_key=key)
         self._loaded = True
-        print(f"Whisper {model_tag} loaded successfully.")
 
     def unload(self) -> None:
-        """Free the Whisper model from memory."""
-        self._model = None
+        self._provider = None
         self._loaded = False
 
     def predict(self, model_input: dict) -> dict:
-        """Run transcription and return IO_Rule §2 compliant output.
+        """Run transcription via Doubao ASR API.
 
-        Parameters
-        ----------
-        model_input : dict
-            IO_Rule §1 unified input shell:
-            {
-                "schema_version": "1.0",
-                "task_id": "...",
-                "video_id": "...",
-                "model": {"name": "whisper", "version": "..."},
-                "input": {
-                    "audio_uri": "storage://.../audio.wav",
-                    -- or --
-                    "video_uri": "storage://.../normalized.mp4"
-                },
-                "parameters": {
-                    "language": "zh",          # optional
-                    "word_timestamps": true    # optional
-                }
-            }
-
-        Returns
-        -------
-        dict
-            IO_Rule §2 output:
-            {
-                "status": "SUCCEEDED" | "FAILED",
-                "artifacts": {"subtitles": "storage://..."},
-                "metrics": {"segment_count": N, "runtime_ms": M},
-                "error": {"code": "...", "message": "..."}  # only if FAILED
-            }
+        IO_Rule §1 input shell. Accepts audio_uri or video_uri.
+        Returns IO_Rule §2 output with subtitle_segments.
         """
-        if not self._loaded or self._model is None:
-            return self._error("MODEL_NOT_LOADED", "Call load() before predict().")
+        if not self._loaded:
+            self.load()
 
         task_id = model_input.get("task_id", "unknown")
         video_id = model_input.get("video_id", "unknown")
         params = model_input.get("parameters", {})
 
-        # --- Resolve audio source ---
+        # Resolve audio
         audio_input = model_input.get("input", {})
         audio_uri = audio_input.get("audio_uri")
         video_uri = audio_input.get("video_uri")
@@ -128,73 +73,75 @@ class WhisperAdapter(BaseModelAdapter):
         if audio_uri:
             audio_path = self._resolve_uri(audio_uri)
         elif video_uri:
-            # Extract audio from normalized video
             audio_path = self._extract_audio(video_uri)
             if audio_path is None:
-                return self._error(
-                    "AUDIO_EXTRACTION_FAILED",
-                    "Failed to extract audio from normalized video.",
-                )
+                return self._error("AUDIO_EXTRACTION_FAILED", "FFmpeg audio extraction failed.")
         else:
-            return self._error(
-                "NO_AUDIO_INPUT",
-                "Provide audio_uri or video_uri in model_input.input.",
-            )
+            return self._error("NO_AUDIO_INPUT", "Provide audio_uri or video_uri.")
 
         if not os.path.exists(audio_path):
-            return self._error(
-                "AUDIO_NOT_FOUND",
-                f"Audio file not found: {audio_path}",
-            )
+            return self._error("AUDIO_NOT_FOUND", f"Audio file not found: {audio_path}")
 
-        # --- Run transcription ---
-        transcribe_options: dict = {
-            "word_timestamps": params.get("word_timestamps", True),
-        }
-        if params.get("language"):
-            transcribe_options["language"] = params["language"]
-
+        # Transcribe
         try:
-            t_start = time.monotonic()
-            result = self._model.transcribe(audio_path, **transcribe_options)
-            runtime_ms = int((time.monotonic() - t_start) * 1000)
+            t0 = time.monotonic()
+            result = self._provider.transcribe(
+                audio_path,
+                language=params.get("language"),
+            )
+            runtime_ms = int((time.monotonic() - t0) * 1000)
         except Exception as e:
             return self._error("TRANSCRIPTION_FAILED", str(e))
 
-        # --- Convert to subtitle segments ---
+        # Build segments
         segments = self._build_segments(result, video_id, params.get("language"))
 
-        # --- Build IO_Rule output ---
         return {
             "task_id": task_id,
             "video_id": video_id,
             "status": "SUCCEEDED",
-            "artifacts": {
-                "subtitle_segments": segments,
-            },
+            "artifacts": {"subtitle_segments": segments},
             "metrics": {
                 "segment_count": len(segments),
                 "runtime_ms": runtime_ms,
-                "language": result.get("language", "unknown"),
+                "language": result.get("language", params.get("language", "unknown")),
             },
         }
 
     def health_check(self) -> dict:
-        """Report model health status."""
         return {
-            "model": "whisper",
+            "model": "doubao-asr",
             "version": self.version,
-            "model_size": self._model_size,
             "loaded": self._loaded,
-            "status": "healthy" if self._loaded else "not_loaded",
+            "status": (
+                "healthy"
+                if self._provider and self._provider.health_check()
+                else "not_loaded"
+            ),
         }
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Internal
     # ------------------------------------------------------------------
 
-    def _resolve_uri(self, uri: str) -> str:
-        """Convert storage:// URI to local absolute path."""
+    @staticmethod
+    def _resolve_api_key() -> str:
+        try:
+            from core.config import get_settings
+
+            k = get_settings().doubao_asr_api_key
+            if k:
+                return k
+        except Exception:
+            pass
+        return (
+            os.getenv("SPEECH_API_KEY", "")
+            or os.getenv("ARK_API_KEY", "")
+            or os.getenv("DOUBAO_ASR_API_KEY", "")
+        )
+
+    @staticmethod
+    def _resolve_uri(uri: str) -> str:
         storage_root = os.getenv("STORAGE_ROOT", "./data")
         prefix = "storage://"
         if uri.startswith(prefix):
@@ -202,75 +149,97 @@ class WhisperAdapter(BaseModelAdapter):
         return uri
 
     def _extract_audio(self, video_uri: str) -> str | None:
-        """Extract 16kHz mono WAV from a video via FFmpeg.
-
-        Returns the path to the extracted audio file, or None on failure.
-        """
         video_path = self._resolve_uri(video_uri)
         if not os.path.exists(video_path):
             return None
-
-        # Place audio alongside the normalized video
         audio_dir = os.path.dirname(video_path)
         audio_path = os.path.join(audio_dir, "audio.wav")
-
-        # Skip if already extracted
         if os.path.exists(audio_path):
             return audio_path
-
         cmd = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            video_path,
-            "-vn",  # no video
-            "-acodec",
-            "pcm_s16le",  # 16-bit PCM
-            "-ar",
-            "16000",  # 16 kHz
-            "-ac",
-            "1",  # mono
+            "ffmpeg", "-y", "-i", video_path,
+            "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
             audio_path,
         ]
-
         try:
             subprocess.run(cmd, capture_output=True, check=True, timeout=300)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             return None
-
         return audio_path
 
     def _build_segments(
-        self,
-        whisper_result: dict,
-        video_id: str,
-        language: str | None = None,
+        self, api_result: dict, video_id: str, language: str | None
     ) -> list[dict]:
-        """Convert Whisper output to IO_Rule subtitle_segments format.
+        """Convert API response to IO_Rule subtitle_segments.
 
-        Each segment: {subtitle_id, start_ms, end_ms, text, language, confidence}
+        Handles both native ByteDance format (result[0].utterances)
+        and OpenAI-compatible format (segments).
         """
-        segments: list[dict] = []
-        detected_lang = whisper_result.get("language", language or "unknown")
+        detected_lang = api_result.get("language", language or "unknown")
 
-        for i, seg in enumerate(whisper_result.get("segments", [])):
-            segments.append(
-                {
+        # --- ByteDance native format: result[0].utterances ---
+        result_list = api_result.get("result", [])
+        if result_list:
+            r0 = result_list[0] if isinstance(result_list, list) else result_list
+            utterances = r0.get("utterances", [])
+            if utterances:
+                segments: list[dict] = []
+                for i, u in enumerate(utterances):
+                    segments.append({
+                        "subtitle_id": f"subtitle_{i + 1:06d}",
+                        "video_id": video_id,
+                        "start_ms": int(u.get("start_time", 0)),
+                        "end_ms": int(u.get("end_time", 0)),
+                        "text": u.get("text", "").strip(),
+                        "language": detected_lang,
+                        "confidence": round(u.get("confidence", 0.0), 4),
+                    })
+                return segments
+            # No utterances — use full text as single segment
+            text = r0.get("text", "")
+            if text.strip():
+                return [{
+                    "subtitle_id": "subtitle_000001",
+                    "video_id": video_id,
+                    "start_ms": 0,
+                    "end_ms": 0,
+                    "text": text.strip(),
+                    "language": detected_lang,
+                    "confidence": 0.0,
+                }]
+
+        # --- OpenAI-compatible format: text + segments ---
+        raw_segments = api_result.get("segments", [])
+        if raw_segments:
+            segments = []
+            for i, seg in enumerate(raw_segments):
+                segments.append({
                     "subtitle_id": f"subtitle_{i + 1:06d}",
                     "video_id": video_id,
-                    "start_ms": int(round(seg["start"] * 1000)),
-                    "end_ms": int(round(seg["end"] * 1000)),
-                    "text": seg["text"].strip(),
+                    "start_ms": int(round(seg.get("start", seg.get("begin", 0)) * 1000)),
+                    "end_ms": int(round(seg.get("end", 0) * 1000)),
+                    "text": seg.get("text", "").strip(),
                     "language": detected_lang,
                     "confidence": round(seg.get("confidence", 0.0), 4),
-                }
-            )
+                })
+            return segments
 
-        return segments
+        # --- Fallback: single segment from top-level text ---
+        text = api_result.get("text", "")
+        if text.strip():
+            return [{
+                "subtitle_id": "subtitle_000001",
+                "video_id": video_id,
+                "start_ms": 0,
+                "end_ms": 0,
+                "text": text.strip(),
+                "language": detected_lang,
+                "confidence": 0.0,
+            }]
+        return []
 
     @staticmethod
     def _error(code: str, message: str) -> dict:
-        """Build an IO_Rule §3 error dict."""
         return {
             "status": "FAILED",
             "error": {"code": code, "message": message, "retryable": False},

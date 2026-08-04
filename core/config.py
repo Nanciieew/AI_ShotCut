@@ -104,6 +104,20 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, ge=1, le=65535, description="API server port.")
 
     # ------------------------------------------------------------------
+    # VLM / LLM API
+    # ------------------------------------------------------------------
+    qwen_vl_api_key: str = Field(
+        default="",
+        description="API key for Qwen2.5-VL + DeepSeek (modelarts-maas). "
+        "Must be set via QWEN_VL_API_KEY env var. Never hardcode in code.",
+    )
+    doubao_asr_api_key: str = Field(
+        default="",
+        description="API key for Doubao (豆包) ASR via Volcano Engine Ark. "
+        "Must be set via DOUBAO_ASR_API_KEY env var. Never hardcode in code.",
+    )
+
+    # ------------------------------------------------------------------
     # Keyframe Extraction
     # ------------------------------------------------------------------
     keyframe_extraction_available: bool = Field(

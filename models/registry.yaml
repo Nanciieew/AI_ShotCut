@@ -88,3 +88,35 @@ models:
     adapter: models.audio_encoder.adapter.AudioEncoderAdapter
     enabled: false
     requires_gpu: false
+
+  vlm_scene_boundary:
+    task: scene_boundary_detection
+    description: Scores shot boundaries for location + character change via Qwen2.5-VL.
+    repository: ""
+    revision: ""
+    code_license: unknown
+    weights_license: unknown
+    dataset_license: unknown
+    commercial_use: false
+    adapter: models.vlm_boundary.adapter.VLMSceneBoundaryAdapter
+    enabled: false
+    requires_gpu: false
+    notes: |
+      Qwen2.5-VL via modelarts-maas API. API key in QWEN_VL_API_KEY env var.
+      Outputs location_character_scores.json per boundary.
+
+  plot_event:
+    task: plot_event_segmentation
+    description: Plans narrative event tree and scores shot boundaries for plot change via DeepSeek.
+    repository: ""
+    revision: ""
+    code_license: unknown
+    weights_license: unknown
+    dataset_license: unknown
+    commercial_use: false
+    adapter: models.llm_plot.adapter.PlotEventAdapter
+    enabled: false
+    requires_gpu: false
+    notes: |
+      DeepSeek via modelarts-maas API (shared key with Qwen). API key in QWEN_VL_API_KEY.
+      Outputs plot_scores.json with event tree.

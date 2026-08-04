@@ -1,15 +1,22 @@
 """OmniShotCut pipeline canvas builder.
 
-Builds the Celery chain for the core analysis pipeline:
+Builds the Celery chain for video analysis.
 
-    video.normalize → shot.detect → [video.extract_keyframes] → final.pipeline_complete
+Full scene analysis chain:
+    video.normalize
+      → shot.detect
+        → video.extract_keyframes  ──┐
+        → subtitle.transcribe       ──┤
+          → scene.score_vlm           │ (parallel via group)
+          → scene.score_plot          │
+            → scene.merge_scores      │
+              → final.pipeline_complete
 
-All chain links use immutable signatures so that no upstream return value
-is injected into the next task's positional arguments.  Each task resolves
-its own inputs from the database via task_id / video_id.
+All chain links use immutable signatures. Each task resolves its own
+inputs from the database via task_id / video_id.
 """
 
-from celery import chain
+from celery import chain, group
 
 from workers.celery_app import get_celery_app
 
@@ -19,7 +26,7 @@ def build_omnishotcut_canvas(
     task_id: str,
     video_id: str,
     extract_keyframes: bool = False,
-    transcribe: bool = False,
+    scene_analysis: bool = False,
 ) -> chain:
     """Build the OmniShotCut analysis pipeline canvas.
 
@@ -30,11 +37,10 @@ def build_omnishotcut_canvas(
     video_id : str
         Video to process.
     extract_keyframes : bool
-        When True, insert the keyframe extraction step after shot detection.
-        Default False.
-    transcribe : bool
-        When True, insert the Whisper subtitle transcription step after
-        shot detection. Default False.
+        When True, extract 25%/50%/75% keyframes after shot detection.
+    scene_analysis : bool
+        When True, run full scene scoring: subtitle transcription,
+        VLM + LLM scoring, and final scene merging.
 
     Returns
     -------
@@ -44,47 +50,46 @@ def build_omnishotcut_canvas(
     app = get_celery_app()
 
     steps: list = [
-        app.signature(
-            "video.normalize",
-            args=(task_id, video_id),
-            immutable=True,
-            queue="video",
-        ),
-        app.signature(
-            "shot.detect",
-            args=(task_id, video_id, "omnishotcut"),
-            immutable=True,
-            queue="shot",
-        ),
+        app.signature("video.normalize", args=(task_id, video_id),
+                      immutable=True, queue="video"),
+        app.signature("shot.detect", args=(task_id, video_id, "omnishotcut"),
+                      immutable=True, queue="shot"),
     ]
 
-    if transcribe:
+    if scene_analysis:
+        # Keyframe extraction (needs shots) + Subtitle (needs normalized video)
+        # Run in parallel — independent tasks
         steps.append(
-            app.signature(
-                "subtitle.transcribe",
-                args=(task_id, video_id),
-                immutable=True,
-                queue="subtitle",
+            group(
+                app.signature("video.extract_keyframes", args=(task_id, video_id),
+                              immutable=True, queue="video"),
+                app.signature("subtitle.transcribe", args=(task_id, video_id),
+                              immutable=True, queue="subtitle"),
             )
         )
-
-    if extract_keyframes:
+        # VLM (needs keyframes+shots) + Plot (needs subtitles+shots) in parallel
         steps.append(
-            app.signature(
-                "video.extract_keyframes",
-                args=(task_id, video_id),
-                immutable=True,
-                queue="video",
+            group(
+                app.signature("scene.score_vlm", args=(task_id, video_id),
+                              immutable=True, queue="scene"),
+                app.signature("scene.score_plot", args=(task_id, video_id),
+                              immutable=True, queue="scene"),
             )
+        )
+        # Merge after both scoring groups complete
+        steps.append(
+            app.signature("scene.merge_scores", args=(task_id, video_id),
+                          immutable=True, queue="scene")
+        )
+    elif extract_keyframes:
+        steps.append(
+            app.signature("video.extract_keyframes", args=(task_id, video_id),
+                          immutable=True, queue="video")
         )
 
     steps.append(
-        app.signature(
-            "final.pipeline_complete",
-            args=(task_id, video_id),
-            immutable=True,
-            queue="final",
-        )
+        app.signature("final.pipeline_complete", args=(task_id, video_id),
+                      immutable=True, queue="final")
     )
 
     return chain(*steps)

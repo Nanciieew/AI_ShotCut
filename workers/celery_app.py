@@ -30,6 +30,7 @@ def create_celery_app() -> Celery:
             "workers.tasks.subtitle_tasks",
             "workers.tasks.feature_tasks",
             "workers.tasks.scene_tasks",
+            "workers.tasks.scene_score_tasks",
             "workers.tasks.final_tasks",
             "workers.tasks.maintenance_tasks",
             "workers.tasks.keyframe_tasks",

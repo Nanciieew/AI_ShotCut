@@ -1,8 +1,0 @@
-﻿# Whisper model dependencies
-# Source: https://github.com/openai/whisper (MIT)
-# Install:
-#   pip install -r requirements/worker.txt
-#   pip install -r requirements/models/whisper.txt
-
-# --- Whisper ---
-openai-whisper>=20240930
