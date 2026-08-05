@@ -10,8 +10,11 @@ Provides:
 import os
 import shutil
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from apps.api.routes import results, tasks, videos
 from core.database.session import check_db_connection
@@ -128,6 +131,11 @@ def create_app() -> FastAPI:
     async def health():
         """Legacy health check — delegates to /health/ready."""
         return await health_ready()
+
+    # --- Static files (Web GUI) ---
+    static_dir = Path(__file__).parent.parent / "static"
+    if static_dir.exists():
+        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
     # --- Model Health (placeholder) ---
     @app.get("/api/v1/models/{model_name}/health")
