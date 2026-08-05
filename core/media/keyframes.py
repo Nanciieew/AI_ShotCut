@@ -29,9 +29,8 @@ from PIL import Image
 # ---------------------------------------------------------------------------
 
 POSITIONS: tuple[tuple[int, int], ...] = (
-    (1, 4),  # 25%
-    (1, 2),  # 50%
-    (3, 4),  # 75%
+    (1, 4),  # 25% — start-of-shot (used by VLM as img_1)
+    (3, 4),  # 75% — end-of-shot (used by VLM as img_3)
 )
 
 

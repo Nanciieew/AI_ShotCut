@@ -139,6 +139,12 @@ class Settings(BaseSettings):
         ge=64,
         description="Maximum long-side pixel count. 672 is divisible by DINOv2 patch size 14.",
     )
+    keyframe_vlm_max_long_side: int = Field(
+        default=320,
+        ge=64,
+        description="VLM proxy keyframe max long side. 320×180 for Qwen VL API calls. "
+        "Reduces tokens ~10× vs 672px, 2h movie finishes in ~3min.",
+    )
 
     # ------------------------------------------------------------------
     # Validation

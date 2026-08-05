@@ -105,8 +105,8 @@ class TestComputeKeyframeTargets:
             },
         ]
         targets = compute_keyframe_targets(shots, 24000, 1001)
-        assert len(targets) == 3
-        assert [t.frame_number for t in targets] == [26, 51, 77]
+        assert len(targets) == 2
+        assert [t.frame_number for t in targets] == [26, 77]
 
     def test_targets_sorted_by_frame_number(self):
         shots = [
@@ -148,7 +148,6 @@ class TestComputeKeyframeTargets:
         targets = compute_keyframe_targets(shots, 24000, 1001)
         expected = [
             "shot_000001_001_004.jpg",
-            "shot_000001_001_002.jpg",
             "shot_000001_003_004.jpg",
         ]
         assert [t.filename for t in targets] == expected

@@ -98,10 +98,14 @@ def score_vlm(self, task_id: str, video_id: str) -> dict:
         clear_task_context()
         raise NonRetryableTaskError(f"[MODEL_LOAD_FAILED] {e}")
 
-    # Build keyframe dir path from shots artifact path
+    # Build keyframe dir path — prefer 320px proxy for VLM speed
     shots_path = _resolve_uri(shots_art.uri, storage_root)
-    kf_dir = os.path.join(os.path.dirname(os.path.dirname(shots_path)),
-                          "shot_keyframes", "1.0.0")
+    base = os.path.dirname(os.path.dirname(shots_path))
+    kf_dir = os.path.join(base, "shot_keyframes", "1.0.0")
+    kf_proxy = os.path.join(base, "shot_keyframes_proxy", "1.0.0")
+    if os.path.isdir(kf_proxy) and os.listdir(kf_proxy):
+        kf_dir = kf_proxy
+        print(f"Using VLM proxy keyframes (320px): {kf_proxy}")
 
     try:
         t0 = time.monotonic()
@@ -109,7 +113,7 @@ def score_vlm(self, task_id: str, video_id: str) -> dict:
             "task_id": task_id, "video_id": video_id,
             "model": {"name": model_name, "version": "0.1.0"},
             "input": {"shots_uri": shots_art.uri, "keyframes_dir": kf_dir},
-            "parameters": {"batch_size": 3},
+            "parameters": {},  # batch_size auto-detected from image resolution
         })
         runtime_ms = int((time.monotonic() - t0) * 1000)
     except Exception as e:
@@ -334,13 +338,45 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
 
 
 @app.task(name="scene.merge_scores", bind=True, max_retries=1)
-def merge_scores(self, task_id: str, video_id: str) -> dict:
+def merge_scores(self, task_id: str, video_id: str,
+                 mode: str = "weighted",
+                 location_weight: int = 35,
+                 character_weight: int = 35,
+                 plot_weight: int = 30) -> dict:
     """Merge VLM + Plot scores into scene_score, greedily select final scenes.
 
     Reads location_character_scores + plot_scores + shots.json.
-    Weighted merge: 0.35*location + 0.35*character + 0.30*plot.
     Saves final_result.json.
+
+    Modes:
+      - location_only: scene_score = location_change
+      - character_only: scene_score = character_group_change
+      - plot_only: scene_score = plot_change
+      - custom: scene_score = L*location + C*character + P*plot
+               (L,C,P from location_weight/character_weight/plot_weight,
+                1-10 each, normalized to sum=1.0)
+      - weighted (default): 0.35*location + 0.35*character + 0.30*plot
     """
+    # Compute weights
+    if mode == "location_only":
+        W = (1.0, 0.0, 0.0)
+    elif mode == "character_only":
+        W = (0.0, 1.0, 0.0)
+    elif mode == "plot_only":
+        W = (0.0, 0.0, 1.0)
+    elif mode == "custom":
+        total = location_weight + character_weight + plot_weight
+        if total <= 0:
+            W = (0.35, 0.35, 0.30)
+        else:
+            W = (
+                location_weight / total,
+                character_weight / total,
+                plot_weight / total,
+            )
+    else:
+        W = (0.35, 0.35, 0.30)
+
     model_name = "scene_merger"
     set_task_context(task_id=task_id, video_id=video_id, model=model_name)
     storage_root = os.getenv("STORAGE_ROOT", "./data")
@@ -386,7 +422,6 @@ def merge_scores(self, task_id: str, video_id: str) -> dict:
                 plot_by_shot[p["shot_id"]] = p
 
     # Merge
-    W = (0.35, 0.35, 0.30)
     THRESHOLD, MIN_SCENE_MS = 50, 30000
     merged, final_scenes = [], []
     scene_start, scene_start_shot = shots[0]["start_ms"], shots[0]["shot_id"]
@@ -429,6 +464,7 @@ def merge_scores(self, task_id: str, video_id: str) -> dict:
     out = {
         "video_id": video_id, "shot_count": n, "boundary_count": n - 1,
         "weights": {"location": W[0], "character": W[1], "plot": W[2]},
+        "mode": mode,
         "threshold": THRESHOLD, "min_scene_ms": MIN_SCENE_MS,
         "merged_scores": merged, "final_scenes": final_scenes,
     }

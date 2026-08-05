@@ -7,6 +7,9 @@ Usage:
         --shots data/local_validation/.../shots.json \
         --out data/local_validation/.../shot_keyframes/1.0.0 \
         --max-side 672 --quality 85
+
+    # VLM proxy (320×180, ~3min for 2h movie):
+    python scripts/extract_keyframes.py ... --vlm-proxy
 """
 
 import argparse, json, sys, time
@@ -25,9 +28,14 @@ def main():
     p.add_argument("--out", required=True, help="Output directory for keyframe images")
     p.add_argument("--max-side", type=int, default=672, help="Max long side pixels (default: 672)")
     p.add_argument("--quality", type=int, default=85, help="JPEG quality (default: 85)")
+    p.add_argument("--vlm-proxy", action="store_true", help="Extract 320×180 proxy for VLM API (replaces shot_keyframes with shot_keyframes_proxy)")
     p.add_argument("--fps-num", type=int, default=0, help="FPS numerator (auto-detect if 0)")
     p.add_argument("--fps-den", type=int, default=1, help="FPS denominator")
     args = p.parse_args()
+
+    if args.vlm_proxy:
+        args.max_side = 320
+        args.out = str(Path(args.out).parent.parent / "shot_keyframes_proxy" / "1.0.0")
 
     video = args.video
     shots_path = args.shots

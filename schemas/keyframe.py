@@ -48,7 +48,7 @@ class ShotKeyframes(BaseModel):
     samples: list[KeyframeSample] = Field(
         ...,
         min_length=1,
-        max_length=3,
+        max_length=2,
         description="1-3 keyframe samples (always 3 requested; dedup may reduce unique count)",
     )
 
