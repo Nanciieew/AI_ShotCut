@@ -88,6 +88,12 @@ async function loadResults() {
   } catch (_) {}
 }
 
+const celeryOk = ref(false)
+async function checkCelery() {
+  try { const r = await fetch('/health/ready'); const d = await r.json()
+    celeryOk.value = d.checks?.celery_broker === true } catch (_) {}
+}
+checkCelery(); setInterval(checkCelery, 15000)
 onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 </script>
 
@@ -96,6 +102,10 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
     <header>
       <h1>AI ShotCut</h1>
       <p class="sub">Intelligent Movie Scene Analysis</p>
+      <div class="status-bar">
+        <span class="dot-status" :class="{on:celeryOk,off:!celeryOk}"></span>
+        Celery {{ celeryOk ? 'Ready' : 'Offline — start worker first' }}
+      </div>
     </header>
 
     <UploadModal v-if="phase === 'idle' || phase === 'uploading'" :phase="phase"
@@ -130,6 +140,12 @@ header { text-align: center; padding: 48px 0 36px; }
 h1 { font-size: 2.4rem; background: linear-gradient(135deg, #6c8cff, #a78bfa, #f472b6);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; letter-spacing: -0.5px; }
 .sub { color: var(--muted); font-size: 0.95rem; }
+.status-bar { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px;
+  padding: 5px 14px; border-radius: 20px; background: var(--panel); border: 1px solid var(--border);
+  font-size: 0.75rem; color: var(--muted); }
+.dot-status { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-status.on { background: var(--success); box-shadow: 0 0 6px #4ade8040; }
+.dot-status.off { background: var(--danger); }
 .main-grid { display: grid; grid-template-columns: 420px 1fr; gap: 24px; align-items: start; }
 .left-col { display: flex; flex-direction: column; gap: 16px; }
 .file-badge { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
