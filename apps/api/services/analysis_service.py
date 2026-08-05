@@ -125,7 +125,9 @@ async def submit_full_pipeline(
             from core.media.normalization import validate_normalization
             from core.media.schemas import NormalizationConfig
 
-            video_path_full = os.path.join(storage_root, source_uri[len("storage://"):]) if source_uri.startswith("storage://") else source_uri
+            if source_uri.startswith("storage://"):
+                source_uri = source_uri[len("storage://"):]
+            video_path_full = os.path.join(storage_root, source_uri)
             artifact_base = f"projects/{proj_id}/videos/{vid}/artifacts"
             norm_dir = os.path.join(storage_root, artifact_base, "video_normalization", "1.0.0")
             os.makedirs(norm_dir, exist_ok=True)
