@@ -135,12 +135,15 @@ async def submit_full_pipeline(
                 task_repo = TaskRepository(session)
                 task_repo.update_progress(task_id, 10, stage="normalize_video"); session.commit()
 
-            probe_before = run_ffprobe(video_path_full)
-            cfg = NormalizationConfig()
-            cmd = build_normalize_command(input_path=video_path_full, output_path=normalized_path, probe=probe_before, config=cfg)
-            run_ffmpeg(cmd, timeout=3600, description="normalize")
-            probe_after = run_ffprobe(normalized_path)
-            validate_normalization(probe_before=probe_before, probe_after=probe_after, output_path=normalized_path)
+            if not os.path.exists(normalized_path):
+                probe_before = run_ffprobe(video_path_full)
+                cfg = NormalizationConfig()
+                cmd = build_normalize_command(input_path=video_path_full, output_path=normalized_path, probe=probe_before, config=cfg)
+                run_ffmpeg(cmd, timeout=3600, description="normalize")
+                probe_after = run_ffprobe(normalized_path)
+                validate_normalization(probe_before=probe_before, probe_after=probe_after, output_path=normalized_path)
+            else:
+                probe_after = run_ffprobe(normalized_path)
 
             nrml_uri = f"storage://{artifact_base}/video_normalization/1.0.0/normalized.mp4"
             with get_sync_session() as session:
@@ -149,38 +152,44 @@ async def submit_full_pipeline(
                 video_repo.update_metadata(vid, duration_ms=probe_after.duration_ms, fps_num=probe_after.fps_num, fps_den=probe_after.fps_den, width=probe_after.width, height=probe_after.height, normalized_uri=nrml_uri)
                 task_repo.update_progress(task_id, 30, stage="detect_shots"); session.commit()
 
-            # Step 2: Shot detection
+            # Step 2: Shot detection (skip if shots.json exists)
+            shot_dir = os.path.join(storage_root, artifact_base, "omnishotcut", "0.1.0")
+            shots_json = os.path.join(shot_dir, "shots.json")
             from models.ffmpeg_scene.adapter import FFmpegSceneAdapter
             adapter = FFmpegSceneAdapter()
-            result = adapter.predict({"task_id": task_id, "video_id": vid, "model": {"name": "ffmpeg_scene", "version": "0.1.0"}, "input": {"video_uri": nrml_uri}, "parameters": {"threshold": 0.1}})
-            shots = result.get("metrics", {}).get("shot_count", 0) or len(adapter._last_result.get("shots", []))
-            shot_dir = os.path.join(storage_root, artifact_base, "omnishotcut", "0.1.0")
-            os.makedirs(shot_dir, exist_ok=True)
-            with open(os.path.join(shot_dir, "shots.json"), "w") as f: json.dump(adapter._last_result, f)
+            if os.path.exists(shots_json):
+                with open(shots_json) as f: adapter._last_result = json.load(f)
+            else:
+                adapter.predict({"task_id": task_id, "video_id": vid, "model": {"name": "ffmpeg_scene", "version": "0.1.0"}, "input": {"video_uri": nrml_uri}, "parameters": {"threshold": 0.1}})
+                os.makedirs(shot_dir, exist_ok=True)
+                with open(shots_json, "w") as f: json.dump(adapter._last_result, f)
+            shots_list = adapter._last_result.get("shots", [])
 
             with get_sync_session() as session:
                 task_repo = TaskRepository(session)
                 task_repo.update_progress(task_id, 40, stage="extract_keyframes"); session.commit()
 
-            # Step 3+4: Keyframes ∥ Subtitle (parallel)
+            # Step 3+4: Keyframes ∥ Subtitle (parallel, skip if exists)
             from concurrent.futures import ThreadPoolExecutor, as_completed
             from core.media.keyframes import compute_keyframe_targets, extract_keyframes
 
-            shots_list = adapter._last_result.get("shots", [])
-            targets = compute_keyframe_targets(shots_list, probe_after.fps_num, probe_after.fps_den)
             kf_proxy = os.path.join(storage_root, artifact_base, "shot_keyframes_proxy", "1.0.0")
             os.makedirs(kf_proxy, exist_ok=True)
+            kf_done = len(os.listdir(kf_proxy)) > 0 if os.path.isdir(kf_proxy) else False
 
             segs = []
             with ThreadPoolExecutor(max_workers=2) as pool:
-                kf_future = pool.submit(lambda: extract_keyframes(normalized_path, targets, Path(kf_proxy), max_long_side=320, quality=85))
+                if not kf_done:
+                    targets = compute_keyframe_targets(shots_list, probe_after.fps_num, probe_after.fps_den)
+                    kf_future = pool.submit(lambda: extract_keyframes(normalized_path, targets, Path(kf_proxy), max_long_side=320, quality=85))
 
                 if scene_analysis:
                     from models.whisper.adapter import WhisperAdapter
                     wa = WhisperAdapter(); wa.load()
                     sub_future = pool.submit(lambda: wa.predict({"task_id": task_id, "video_id": vid, "model": {"name": "whisper", "version": "1.0.0"}, "input": {"video_uri": nrml_uri}, "parameters": {}}))
                     segs = sub_future.result().get("artifacts", {}).get("subtitle_segments", [])
-                kf_future.result()  # wait for keyframes too
+                if not kf_done:
+                    kf_future.result()
 
             if not scene_analysis:
                 with get_sync_session() as session:
@@ -193,21 +202,31 @@ async def submit_full_pipeline(
                 task_repo = TaskRepository(session)
                 task_repo.update_progress(task_id, 60, stage="scoring"); session.commit()
 
-            # Step 5+6: VLM ∥ DeepSeek (parallel)
+            # Step 5+6: VLM ∥ DeepSeek (parallel, skip if scores exist)
             vlm_scores = []
             plot_scores = []
+            vlm_scores_path = os.path.join(storage_root, artifact_base, "vlm_boundary", "0.1.0", "location_character_scores.json")
+            plot_scores_path = os.path.join(storage_root, artifact_base, "deepseek_plot", "1.0.0", "plot_scores.json")
+            vlm_done = os.path.exists(vlm_scores_path)
+            plot_done = os.path.exists(plot_scores_path)
+
             with ThreadPoolExecutor(max_workers=2) as pool:
                 vlm_future = None
                 if len(shots_list) >= 2:
-                    from models.vlm_boundary.adapter import VLMSceneBoundaryAdapter
-                    def run_vlm():
-                        va = VLMSceneBoundaryAdapter(); va.load()
-                        va.predict({"task_id": task_id, "video_id": vid, "model": {"name": "vlm_scene_boundary", "version": "0.1.0"}, "input": {"shots_uri": f"storage://{artifact_base}/omnishotcut/0.1.0/shots.json", "keyframes_dir": kf_proxy}, "parameters": {}})
-                        return va._last_result.get("scores", [])
-                    vlm_future = pool.submit(run_vlm)
+                    if vlm_done:
+                        with open(vlm_scores_path) as f: vlm_scores = json.load(f).get("scores", [])
+                    else:
+                        from models.vlm_boundary.adapter import VLMSceneBoundaryAdapter
+                        def run_vlm():
+                            va = VLMSceneBoundaryAdapter(); va.load()
+                            va.predict({"task_id": task_id, "video_id": vid, "model": {"name": "vlm_scene_boundary", "version": "0.1.0"}, "input": {"shots_uri": f"storage://{artifact_base}/omnishotcut/0.1.0/shots.json", "keyframes_dir": kf_proxy}, "parameters": {}})
+                            return va._last_result.get("scores", [])
+                        vlm_future = pool.submit(run_vlm)
 
                 plot_future = None
-                if segs:
+                if plot_done:
+                    with open(plot_scores_path) as f: plot_scores = json.load(f).get("plot_scores", [])
+                elif segs:
                     sub_lines = [f"[{int(s['start_ms']//60000):02d}:{(s['start_ms']%60000)/1000:05.2f}] {s['text'][:80]}" for s in segs]
                     from models.vlm_boundary.providers.deepseek_llm import DeepSeekLLMProvider
                     api_key = os.getenv("QWEN_VL_API_KEY", "")
@@ -243,7 +262,16 @@ async def submit_full_pipeline(
                                 if sc > mx: mx = sc
                         if mx > 0: plot_scores.append({"shot_id": shot["shot_id"], "plot_change": mx})
 
-            # Step 7: Merge
+            # Step 7: Merge (skip if final_result.json exists)
+            merge_dir = os.path.join(storage_root, artifact_base, "scene_merger", "1.0.0")
+            final_json = os.path.join(merge_dir, "final_result.json")
+            if os.path.exists(final_json):
+                with get_sync_session() as session:
+                    task_repo = TaskRepository(session)
+                    task_repo.update_status(task_id, "SUCCEEDED")
+                    task_repo.update_progress(task_id, 100, stage="complete"); session.commit()
+                return
+
             with get_sync_session() as session:
                 task_repo = TaskRepository(session)
                 task_repo.update_progress(task_id, 85, stage="merge_scores"); session.commit()
@@ -294,7 +322,6 @@ async def submit_full_pipeline(
             final_scenes.append({"start_shot": scene_start_shot, "end_shot": shots_list[-1]["shot_id"], "start_ms": scene_start, "end_ms": shots_list[-1]["end_ms"], "scene_score": 0})
 
             # Save results
-            merge_dir = os.path.join(storage_root, artifact_base, "scene_merger", "1.0.0")
             os.makedirs(merge_dir, exist_ok=True)
             with open(os.path.join(merge_dir, "final_result.json"), "w") as f:
                 json.dump({"final_scenes": final_scenes, "candidate_boundaries": candidate_boundaries}, f)
