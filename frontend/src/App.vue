@@ -20,7 +20,7 @@ const shotModel = ref('ffmpeg_scene')
 const scoreMode = ref('weighted')
 const intensity = ref('medium')
 const minDist = ref(12)
-const customW = ref({ L:5, C:3, P:2 })
+const customW = ref({ L:5, C:5, P:5 })
 
 let pollTimer = null
 
@@ -44,9 +44,9 @@ function getPipelineParams() {
     form.append('cut_intensity', intensity.value)
     form.append('min_distance_s', minDist.value.toString())
     if (scoreMode.value === 'custom') {
-      form.append('location_weight', customW.value.L.toString())
-      form.append('character_weight', customW.value.C.toString())
-      form.append('plot_weight', customW.value.P.toString())
+      form.append('location_w', customW.value.L.toString())
+      form.append('character_w', customW.value.C.toString())
+      form.append('plot_w', customW.value.P.toString())
     }
   }
   return form

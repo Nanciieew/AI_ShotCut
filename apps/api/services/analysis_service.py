@@ -26,9 +26,9 @@ async def submit_full_pipeline(
     scene_analysis: bool = False,
     shot_model: str = "ffmpeg_scene",
     score_mode: str = "weighted",
-    location_weight: int = 35,
-    character_weight: int = 35,
-    plot_weight: int = 30,
+    location_weight: int = 5,
+    character_weight: int = 5,
+    plot_weight: int = 5,
     cut_intensity: str = "medium",
     min_distance_s: int = 12,
 ) -> dict:
