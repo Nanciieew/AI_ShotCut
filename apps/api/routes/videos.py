@@ -161,3 +161,51 @@ async def get_video(
         "height": video.height,
         "created_at": video.created_at.isoformat() if video.created_at else None,
     }
+
+
+@router.get("/videos/{video_id}/keyframes/{shot_id}/{img_name}")
+async def serve_keyframe(
+    video_id: str,
+    shot_id: str,
+    img_name: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Serve a keyframe JPEG image from the project's artifacts."""
+    import os
+
+    from fastapi.responses import FileResponse
+
+    from sqlalchemy import select
+
+    from core.database.models import Video as VideoModel
+
+    db_result = await db.execute(select(VideoModel).where(VideoModel.video_id == video_id))
+    video = db_result.scalar_one_or_none()
+    if video is None:
+        raise HTTPException(404, "Video not found")
+
+    storage_root = os.getenv("STORAGE_ROOT", "./data")
+    project_id = video.project_id or "default"
+    kf_dir = os.path.join(storage_root, "projects", project_id, "videos", video_id,
+                          "artifacts", "shot_keyframes", "1.0.0")
+    img_path = os.path.join(kf_dir, f"{shot_id}_{img_name}.jpg")
+
+    # Fallback naming convention
+    if not os.path.exists(img_path):
+        # Try shot_000001_img_1.jpg format
+        alt = os.path.join(kf_dir, f"{shot_id}_{img_name.replace('img_', '_img_')}.jpg")
+        if os.path.exists(alt):
+            img_path = alt
+        else:
+            # Try numeric suffix: img_2 → position 1/2 → _001_002
+            idx = img_name.replace("img_", "")
+            for suffix in [f"001_00{idx}", f"003_00{idx}"]:
+                alt2 = os.path.join(kf_dir, f"{shot_id}_{suffix}.jpg")
+                if os.path.exists(alt2):
+                    img_path = alt2
+                    break
+
+    if not os.path.exists(img_path):
+        raise HTTPException(404, f"Keyframe not found: {shot_id}/{img_name}")
+
+    return FileResponse(img_path, media_type="image/jpeg")
