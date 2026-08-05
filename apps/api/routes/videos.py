@@ -76,7 +76,7 @@ async def upload_video(
 @router.post("/videos/{video_id}/analyze-shots")
 async def start_shot_analysis(
     video_id: str,
-    video_path: str = Form(..., description="Path to video file on storage"),
+    video_path: str = Form(default="", description="Path to video file (auto-resolved if empty)"),
     project_id: str = Form(default="default"),
     extract_keyframes: bool = Form(default=False),
     scene_analysis: bool = Form(default=False),
@@ -98,7 +98,19 @@ async def start_shot_analysis(
 
     Set scene_analysis=True to enable full scene scoring.
     score_mode: location_only | character_only | plot_only | custom | weighted
+    video_path can be empty — auto-resolved from the uploaded video's source_uri.
     """
+    # Auto-resolve video_path from uploaded video if empty
+    if not video_path:
+        from sqlalchemy import select
+        from core.database.models import Video as VideoModel
+        result = await db.execute(select(VideoModel).where(VideoModel.video_id == video_id))
+        video_row = result.scalar_one_or_none()
+        if video_row is None:
+            raise HTTPException(status_code=404, detail=f"Video {video_id} not found. Upload first via POST /videos.")
+        video_path = video_row.source_uri
+        project_id = video_row.project_id or project_id
+
     result = await submit_full_pipeline(
         db=db,
         video_path=video_path,
