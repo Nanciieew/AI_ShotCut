@@ -24,7 +24,13 @@ from core.media.exceptions import (
     FFmpegError,
     FFprobeError,
 )
-from core.media.ffmpeg import build_normalize_command, get_ffmpeg_version, run_ffmpeg
+from core.media.ffmpeg import (
+    build_normalize_command,
+    build_shot_proxy_command,
+    get_ffmpeg_version,
+    run_ffmpeg,
+    validate_proxy_output,
+)
 from core.media.ffprobe import run_ffprobe
 from core.media.normalization import validate_normalization
 from core.media.schemas import FFprobeResult, NormalizationConfig
@@ -313,7 +319,63 @@ def run_omnishotcut_pipeline(
     result.normalized_artifact_id = norm_artifact_id
     result.normalized_artifact_uri = str(normalized_path)
 
-    # --- 7-8. OmniShotCut inference ---
+    # --- 7. Build shot proxy (320×180, no audio) ---
+    proxy_path = shot_dir / "shot_proxy_320x180.mp4"
+    proxy_cmd = build_shot_proxy_command(
+        input_path=str(normalized_path),
+        output_path=str(proxy_path),
+        probe=probe_after,
+        width=320,
+        height=180,
+    )
+    try:
+        run_ffmpeg(proxy_cmd, timeout=3600, description="shot proxy generation")
+    except FFmpegError as e:
+        result.error_code = "SHOT_PROXY_FAILED"
+        result.error_message = str(e)
+        return result
+
+    if not proxy_path.exists():
+        result.error_code = "SHOT_PROXY_FAILED"
+        result.error_message = "FFmpeg reported success but proxy file missing"
+        return result
+
+    # Validate proxy
+    proxy_errors = validate_proxy_output(str(proxy_path), probe_normalized=probe_after)
+    if proxy_errors:
+        result.error_code = "SHOT_PROXY_VALIDATION_FAILED"
+        result.error_message = "; ".join(proxy_errors)
+        return result
+
+    # Write proxy artifact
+    proxy_artifact_id = _new_id()
+    proxy_rel = str(shot_dir.relative_to(output_root))
+    writer.write_json_artifact(
+        relative_path=f"{proxy_rel}/shot_proxy_320x180.mp4.meta.json",
+        data={
+            "file": "shot_proxy_320x180.mp4",
+            "artifact_id": proxy_artifact_id,
+            "artifact_type": "shot_proxy_video",
+            "width": 320,
+            "height": 180,
+            "fps_num": probe_after.fps_num,
+            "fps_den": probe_after.fps_den,
+            "frame_count": probe_after.frame_count,
+            "duration_ms": probe_after.duration_ms,
+            "video_codec": "h264",
+            "pixel_format": "yuv420p",
+            "has_audio": False,
+            "scale_policy": "fit_pad",
+        },
+        artifact_type="shot_proxy_video",
+        artifact_id=proxy_artifact_id,
+        video_id=video_id,
+        run_id=_new_id(),
+        producer=ArtifactProducer(model_name="shot_proxy", model_version="1.0.0"),
+        schema_version="1.0",
+    )
+
+    # --- 8. OmniShotCut inference (reads PROXY, not normalized.mp4) ---
     try:
         from models.omnishotcut.adapter import OmniShotCutAdapter
 
@@ -324,13 +386,13 @@ def run_omnishotcut_pipeline(
         result.error_message = str(e)
         return result
 
-    # Must use normalized.mp4, NOT the original video (§14)
+    # Per §5.4: OmniShotCut reads the PROXY video, NOT normalized.mp4
     model_input = {
         "schema_version": "1.0",
         "task_id": f"local_{video_id}",
         "video_id": video_id,
         "model": {"name": "omnishotcut", "version": model_version},
-        "input": {"video_uri": str(normalized_path)},
+        "input": {"video_uri": str(proxy_path)},
         "parameters": {"mode": mode},
     }
 

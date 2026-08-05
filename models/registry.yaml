@@ -8,6 +8,22 @@
 #   4. Code license, weight license, and dataset license are distinct.
 
 models:
+  ffmpeg_scene:
+    task: shot_boundary_detection
+    description: Detects shot boundaries via FFmpeg scene filter. No GPU, no PyTorch.
+    repository: ""
+    revision: ""
+    code_license: unknown
+    weights_license: unknown
+    dataset_license: unknown
+    commercial_use: true
+    adapter: models.ffmpeg_scene.adapter.FFmpegSceneAdapter
+    enabled: true
+    requires_gpu: false
+    notes: |
+      5-second CPU alternative to OmniShotCut. Uses FFmpeg select filter.
+      threshold=0.1 for best recall; VLM will re-score all boundaries.
+
   omnishotcut:
     task: shot_boundary_detection
     description: Detects shot boundaries (hard cuts, dissolves, wipes) in video.

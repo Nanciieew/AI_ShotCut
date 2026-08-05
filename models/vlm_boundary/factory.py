@@ -1,7 +1,5 @@
 """VLM/LLM Adapter factory — loads from registry or direct import."""
 
-from typing import Optional
-
 _ADAPTERS: dict[str, type] = {}
 
 
@@ -37,7 +35,7 @@ def get_adapter_class(name: str):
     return cls
 
 
-def create_adapter(name: str, api_key: Optional[str] = None):
+def create_adapter(name: str, api_key: str | None = None):
     cls = get_adapter_class(name)
     adapter = cls()
     adapter.load(api_key=api_key)

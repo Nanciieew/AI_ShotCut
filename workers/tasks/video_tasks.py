@@ -29,8 +29,14 @@ from core.media.exceptions import (
     FFprobeError,
     NonRetryableTaskError,
 )
-from core.media.ffmpeg import build_normalize_command, get_ffmpeg_version, run_ffmpeg
-from core.media.ffprobe import probe_video
+from core.media.ffmpeg import (
+    build_keyframe_extract_per_shot_commands,
+    build_normalize_command,
+    get_ffmpeg_version,
+    run_ffmpeg,
+    validate_keyframe_output,
+)
+from core.media.ffprobe import probe_video, run_ffprobe
 from core.media.normalization import validate_normalization
 from core.media.schemas import NormalizationConfig
 from workers.celery_app import app
@@ -394,6 +400,378 @@ def _fail(task_id: str, video_id: str, code: str, message: str) -> dict:
         "status": "FAILED",
         "error": {"code": code, "message": message},
     }
+
+
+# ---------------------------------------------------------------------------
+# Proxy Task
+# ---------------------------------------------------------------------------
+
+
+@app.task(name="video.build_shot_proxy", bind=True, max_retries=1)
+def build_shot_proxy(self, task_id: str, video_id: str) -> dict:
+    """Build 320×180 proxy video for OmniShotCut shot detection.
+
+    Reads normalized_video artifact, generates proxy, saves as artifact.
+    Proxy: H.264, yuv420p, 320×180, no audio, same FPS/frames.
+
+    Per spec: OmniShotCut_320x180_Proxy视频方案.md §5.3
+    """
+    from core.media.ffmpeg import build_shot_proxy_command, run_ffmpeg, validate_proxy_output
+
+    set_task_context(task_id=task_id, video_id=video_id, model="shot_proxy")
+
+    storage_root = os.getenv("STORAGE_ROOT", "./data")
+    writer = ArtifactWriter(storage_root)
+
+    with get_sync_session() as session:
+        video_repo = VideoRepository(session)
+        task_repo = TaskRepository(session)
+
+        video = video_repo.get(video_id)
+        if video is None:
+            clear_task_context()
+            return _fail(task_id, video_id, "VIDEO_NOT_FOUND", f"Video {video_id} not in DB")
+
+        normalized_uri = video.normalized_uri
+        if not normalized_uri:
+            clear_task_context()
+            return _fail(task_id, video_id, "NOT_NORMALIZED", "Run normalize_video first")
+
+        normalized_path = _resolve_uri(normalized_uri, storage_root)
+        if not os.path.exists(normalized_path):
+            clear_task_context()
+            return _fail(
+                task_id,
+                video_id,
+                "NORMALIZED_NOT_FOUND",
+                f"Normalized video missing: {normalized_path}",
+            )
+
+        # Probe normalized for validation reference
+        probe_norm = run_ffprobe(normalized_path)
+
+        task_repo.update_status(task_id, "RUNNING")
+        task_repo.update_progress(task_id, 45, stage="build_shot_proxy")
+
+        run_id = uuid.uuid4().hex[:16]
+        model_run = ModelRun(
+            run_id=run_id,
+            task_id=task_id,
+            video_id=video_id,
+            model_name="shot_proxy",
+            model_version="1.0.0",
+            schema_version="1.0",
+            status="RUNNING",
+            device="cpu",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(model_run)
+        session.commit()
+
+    # Build proxy paths
+    project_id = video.project_id if video else "default"
+    proxy_base = f"projects/{project_id}/videos/{video_id}/artifacts/shot_proxy/1.0.0"
+    proxy_dir = os.path.join(storage_root, proxy_base)
+    os.makedirs(proxy_dir, exist_ok=True)
+
+    proxy_rel = f"{proxy_base}/shot_proxy_320x180.mp4"
+    proxy_abs = os.path.join(storage_root, proxy_rel)
+
+    # Build + run proxy command
+    cmd = build_shot_proxy_command(
+        input_path=normalized_path,
+        output_path=proxy_abs,
+        probe=probe_norm,
+    )
+    t0 = time.monotonic()
+    try:
+        run_ffmpeg(cmd, timeout=3600, description="shot proxy generation")
+    except FFmpegError as e:
+        _remove_if_exists(proxy_abs)
+        with get_sync_session() as s:
+            TaskRepository(s).set_error(task_id, "SHOT_PROXY_FAILED", str(e))
+            s.commit()
+        clear_task_context()
+        return _fail(task_id, video_id, "SHOT_PROXY_FAILED", str(e))
+
+    runtime_ms = int((time.monotonic() - t0) * 1000)
+
+    # Validate
+    errors = validate_proxy_output(proxy_abs, probe_normalized=probe_norm)
+    if errors:
+        with get_sync_session() as s:
+            TaskRepository(s).set_error(task_id, "SHOT_PROXY_VALIDATION_FAILED", "; ".join(errors))
+            s.commit()
+        clear_task_context()
+        return _fail(task_id, video_id, "SHOT_PROXY_VALIDATION_FAILED", "; ".join(errors))
+
+    # Save artifact + manifest
+    proxy_sha = _sha256_file(proxy_abs)
+    producer = ArtifactProducer(
+        model_name="shot_proxy",
+        model_version="1.0.0",
+        code_revision="unknown",
+        weight_revision="unknown",
+    )
+    writer.write_json_artifact(
+        relative_path=proxy_rel,
+        data={
+            "schema_version": "1.0",
+            "artifact_type": "shot_proxy_video",
+            "width": 320,
+            "height": 180,
+            "fps_num": probe_norm.fps_num,
+            "fps_den": probe_norm.fps_den,
+            "frame_count": probe_norm.frame_count,
+            "duration_ms": probe_norm.duration_ms,
+            "video_codec": "h264",
+            "pixel_format": "yuv420p",
+            "has_audio": False,
+            "scale_policy": "fit_pad",
+        },
+        artifact_type="shot_proxy_video",
+        artifact_id=f"{run_id}_proxy",
+        video_id=video_id,
+        run_id=run_id,
+        producer=producer,
+        schema_version="1.0",
+    )
+    proxy_uri = f"storage://{proxy_rel}"
+
+    with get_sync_session() as s:
+        ArtifactRepository(s).create(
+            artifact_id=f"{run_id}_proxy",
+            video_id=video_id,
+            run_id=run_id,
+            artifact_type="shot_proxy_video",
+            uri=proxy_uri,
+            format="mp4",
+            schema_version="1.0",
+            sha256=proxy_sha,
+        )
+        mr = s.get(ModelRun, run_id)
+        if mr:
+            mr.status = "SUCCEEDED"
+            mr.runtime_ms = runtime_ms
+            mr.finished_at = datetime.now(timezone.utc)
+        TaskRepository(s).update_progress(task_id, 50, stage="build_shot_proxy")
+        s.commit()
+
+    clear_task_context()
+    return {
+        "task_id": task_id,
+        "video_id": video_id,
+        "run_id": run_id,
+        "status": "SUCCEEDED",
+        "stage": "build_shot_proxy",
+        "proxy_artifact_id": f"{run_id}_proxy",
+        "proxy_artifact_uri": proxy_uri,
+        "runtime_ms": runtime_ms,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Keyframe extraction Task
+# ---------------------------------------------------------------------------
+
+
+@app.task(name="video.extract_keyframes", bind=True, max_retries=1)
+def extract_keyframes(self, task_id: str, video_id: str, shots_artifact_uri: str = "") -> dict:
+    """Extract keyframes (start/mid/end) per shot from normalized.mp4.
+
+    Reads normalized_video artifact + shots artifact, extracts 3 keyframes
+    per shot using FFmpeg select filter. Saves as shot_keyframes artifact.
+
+    Same strategy as SceneSeg keyf_img_saver: start frame, mid frame, end-1 frame.
+    Extracted from normalized.mp4 (NOT proxy — per Proxy doc §1).
+    """
+    set_task_context(task_id=task_id, video_id=video_id, model="keyframe_extractor")
+
+    storage_root = os.getenv("STORAGE_ROOT", "./data")
+    writer = ArtifactWriter(storage_root)
+
+    with get_sync_session() as session:
+        video_repo = VideoRepository(session)
+        task_repo = TaskRepository(session)
+
+        video = video_repo.get(video_id)
+        if video is None:
+            clear_task_context()
+            return _fail(task_id, video_id, "VIDEO_NOT_FOUND", f"Video {video_id} not in DB")
+
+        normalized_uri = video.normalized_uri
+        if not normalized_uri:
+            clear_task_context()
+            return _fail(task_id, video_id, "NOT_NORMALIZED", "Run normalize_video first")
+
+        normalized_path = _resolve_uri(normalized_uri, storage_root)
+        if not os.path.exists(normalized_path):
+            clear_task_context()
+            return _fail(
+                task_id,
+                video_id,
+                "NORMALIZED_NOT_FOUND",
+                f"Normalized video missing: {normalized_path}",
+            )
+
+        # Load shots
+        if not shots_artifact_uri:
+            # Find latest shots artifact from DB
+            artifacts = ArtifactRepository(session).list_by_video(video_id)
+            shot_artifacts = [
+                a for a in artifacts if a.artifact_type in ("shots", "shot_boundaries")
+            ]
+            if not shot_artifacts:
+                clear_task_context()
+                return _fail(
+                    task_id,
+                    video_id,
+                    "NO_SHOTS",
+                    "No shots artifact found. Run detect_shots first.",
+                )
+            shots_uri = shot_artifacts[-1].uri
+        else:
+            shots_uri = shots_artifact_uri
+
+        shots_path = _resolve_uri(shots_uri, storage_root)
+        if not os.path.exists(shots_path):
+            clear_task_context()
+            return _fail(task_id, video_id, "SHOTS_NOT_FOUND", f"Shots file missing: {shots_path}")
+
+        import json as _json
+
+        with open(shots_path) as f:
+            shots_data = _json.load(f)
+        shots = shots_data.get("shots", [])
+        if not shots:
+            clear_task_context()
+            return _fail(task_id, video_id, "NO_SHOTS", "Shots list is empty")
+
+        task_repo.update_status(task_id, "RUNNING")
+        task_repo.update_progress(task_id, 55, stage="extract_keyframes")
+
+        run_id = uuid.uuid4().hex[:16]
+        model_run = ModelRun(
+            run_id=run_id,
+            task_id=task_id,
+            video_id=video_id,
+            model_name="keyframe_extractor",
+            model_version="1.0.0",
+            schema_version="1.0",
+            status="RUNNING",
+            device="cpu",
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(model_run)
+        session.commit()
+
+    # Build output paths
+    project_id = video.project_id if video else "default"
+    kf_base = f"projects/{project_id}/videos/{video_id}/artifacts/shot_keyframes/1.0.0"
+    kf_dir = os.path.join(storage_root, kf_base)
+    os.makedirs(kf_dir, exist_ok=True)
+
+    # Extract keyframes
+    positions = ["start", "mid", "end"]
+    commands = build_keyframe_extract_per_shot_commands(
+        video_path=normalized_path,
+        output_dir=kf_dir,
+        shots=shots,
+        positions=positions,
+    )
+
+    t0 = time.monotonic()
+    failed_shots = []
+    for shot_id, cmd in commands:
+        try:
+            run_ffmpeg(cmd, timeout=60, description=f"keyframe {shot_id}")
+        except FFmpegError as e:
+            failed_shots.append(f"{shot_id}: {e}")
+
+    runtime_ms = int((time.monotonic() - t0) * 1000)
+
+    # Validate
+    errors = validate_keyframe_output(kf_dir, shots, positions)
+    if errors:
+        with get_sync_session() as s:
+            TaskRepository(s).set_error(
+                task_id,
+                "KEYFRAME_VALIDATION_FAILED",
+                f"Missing {len(errors)} keyframes: {errors[:5]}",
+            )
+            s.commit()
+        clear_task_context()
+        return _fail(
+            task_id, video_id, "KEYFRAME_VALIDATION_FAILED", f"{len(errors)} missing: {errors[:3]}"
+        )
+
+    # Save artifact
+    total_keyframes = len(shots) * len(positions)
+    producer = ArtifactProducer(
+        model_name="keyframe_extractor",
+        model_version="1.0.0",
+        code_revision="unknown",
+        weight_revision="unknown",
+    )
+
+    keyframe_meta = {
+        "schema_version": "1.0",
+        "artifact_type": "shot_keyframes",
+        "total_shots": len(shots),
+        "keyframes_per_shot": len(positions),
+        "total_keyframes": total_keyframes,
+        "positions": positions,
+        "source": "normalized.mp4",
+        "strategy": "SceneSeg_keyf_img_saver",
+    }
+    writer.write_json_artifact(
+        relative_path=f"{kf_base}/shot_keyframes.json",
+        data=keyframe_meta,
+        artifact_type="shot_keyframes",
+        artifact_id=f"{run_id}_kf",
+        video_id=video_id,
+        run_id=run_id,
+        producer=producer,
+        schema_version="1.0",
+    )
+    kf_uri = f"storage://{kf_base}"
+
+    with get_sync_session() as s:
+        ArtifactRepository(s).create(
+            artifact_id=f"{run_id}_kf",
+            video_id=video_id,
+            run_id=run_id,
+            artifact_type="shot_keyframes",
+            uri=kf_uri,
+            format="dir",
+            schema_version="1.0",
+        )
+        mr = s.get(ModelRun, run_id)
+        if mr:
+            mr.status = "SUCCEEDED"
+            mr.runtime_ms = runtime_ms
+            mr.finished_at = datetime.now(timezone.utc)
+        TaskRepository(s).update_progress(task_id, 60, stage="extract_keyframes")
+        s.commit()
+
+    clear_task_context()
+    return {
+        "task_id": task_id,
+        "video_id": video_id,
+        "run_id": run_id,
+        "status": "SUCCEEDED",
+        "stage": "extract_keyframes",
+        "keyframes_artifact_id": f"{run_id}_kf",
+        "keyframes_artifact_uri": kf_uri,
+        "total_keyframes": total_keyframes,
+        "failed_shots": failed_shots,
+        "runtime_ms": runtime_ms,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _write_json_atomic(path: str, data: dict) -> None:

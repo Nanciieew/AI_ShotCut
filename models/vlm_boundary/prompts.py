@@ -13,7 +13,8 @@ LOCATION_CHARACTER_SYSTEM = """你是电影场景分析助手. 逐一比较镜�
    双人对话切到特写 = 不算变化; 同一群人换角度 = 不算变化
 
 输出格式 (只输出 JSON, 不要其他文字):
-{"scores": [{"shot_id": "<id>", "location_change": 85, "character_group_change": 15, "reason": "一句话"}]}
+{"scores": [{"shot_id": "<id>", "location_change": 85,
+ "character_group_change": 15, "reason": "一句话"}]}
 
 确保分数跨边界可比."""
 

@@ -26,7 +26,8 @@ async def upload_video(
     Saves to: data/projects/{project_id}/videos/{video_id}/source/{filename}
     Returns video_id for subsequent pipeline submission.
     """
-    import os, uuid, shutil
+    import os
+    import uuid
 
     storage_root = os.getenv("STORAGE_ROOT", "./data")
     video_id = uuid.uuid4().hex[:12]
@@ -103,11 +104,16 @@ async def start_shot_analysis(
     # Auto-resolve video_path from uploaded video if empty
     if not video_path:
         from sqlalchemy import select
+
         from core.database.models import Video as VideoModel
+
         result = await db.execute(select(VideoModel).where(VideoModel.video_id == video_id))
         video_row = result.scalar_one_or_none()
         if video_row is None:
-            raise HTTPException(status_code=404, detail=f"Video {video_id} not found. Upload first via POST /videos.")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Video {video_id} not found. Upload first via POST /videos.",
+            )
         video_path = video_row.source_uri
         project_id = video_row.project_id or project_id
 

@@ -65,10 +65,10 @@ def build_omnishotcut_canvas(
     app = get_celery_app()
 
     steps: list = [
-        app.signature("video.normalize", args=(task_id, video_id),
-                      immutable=True, queue="video"),
-        app.signature("shot.detect", args=(task_id, video_id, shot_model),
-                      immutable=True, queue="shot"),
+        app.signature("video.normalize", args=(task_id, video_id), immutable=True, queue="video"),
+        app.signature(
+            "shot.detect", args=(task_id, video_id, shot_model), immutable=True, queue="shot"
+        ),
     ]
 
     if scene_analysis:
@@ -76,38 +76,60 @@ def build_omnishotcut_canvas(
         # Run in parallel — independent tasks
         steps.append(
             group(
-                app.signature("video.extract_keyframes", args=(task_id, video_id),
-                              immutable=True, queue="video"),
-                app.signature("subtitle.transcribe", args=(task_id, video_id),
-                              immutable=True, queue="subtitle"),
+                app.signature(
+                    "video.extract_keyframes",
+                    args=(task_id, video_id),
+                    immutable=True,
+                    queue="video",
+                ),
+                app.signature(
+                    "subtitle.transcribe",
+                    args=(task_id, video_id),
+                    immutable=True,
+                    queue="subtitle",
+                ),
             )
         )
         # VLM (needs keyframes+shots) + Plot (needs subtitles+shots) in parallel
         steps.append(
             group(
-                app.signature("scene.score_vlm", args=(task_id, video_id),
-                              immutable=True, queue="scene"),
-                app.signature("scene.score_plot", args=(task_id, video_id),
-                              immutable=True, queue="scene"),
+                app.signature(
+                    "scene.score_vlm", args=(task_id, video_id), immutable=True, queue="scene"
+                ),
+                app.signature(
+                    "scene.score_plot", args=(task_id, video_id), immutable=True, queue="scene"
+                ),
             )
         )
         # Merge after both scoring groups complete
         steps.append(
-            app.signature("scene.merge_scores",
-                          args=(task_id, video_id, score_mode,
-                                location_weight, character_weight, plot_weight,
-                                cut_intensity, min_distance_s),
-                          immutable=True, queue="scene")
+            app.signature(
+                "scene.merge_scores",
+                args=(
+                    task_id,
+                    video_id,
+                    score_mode,
+                    location_weight,
+                    character_weight,
+                    plot_weight,
+                    cut_intensity,
+                    min_distance_s,
+                ),
+                immutable=True,
+                queue="scene",
+            )
         )
     elif extract_keyframes:
         steps.append(
-            app.signature("video.extract_keyframes", args=(task_id, video_id),
-                          immutable=True, queue="video")
+            app.signature(
+                "video.extract_keyframes", args=(task_id, video_id), immutable=True, queue="video"
+            )
         )
 
     steps.append(
-        app.signature("final.pipeline_complete", args=(task_id, video_id),
-                      immutable=True, queue="final")
+        app.signature(
+            "final.pipeline_complete", args=(task_id, video_id), immutable=True, queue="final"
+        )
     )
 
     return chain(*steps)

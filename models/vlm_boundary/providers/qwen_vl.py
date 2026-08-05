@@ -1,7 +1,11 @@
 """Qwen2.5-VL provider — requests + base64 JPEG."""
 
-import base64, json, time
+import base64
+import json
+import time
+
 import requests
+
 from models.vlm_boundary.providers.base import BaseProvider
 
 JPEG_PREFIX = "data:image/jpeg;base64,"

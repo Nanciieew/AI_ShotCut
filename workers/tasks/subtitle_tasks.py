@@ -43,6 +43,7 @@ def transcribe(self, task_id: str, video_id: str) -> dict:
     # Load adapter
     try:
         from models.whisper.adapter import WhisperAdapter
+
         adapter_cls = WhisperAdapter
     except ImportError as e:
         clear_task_context()
@@ -60,7 +61,12 @@ def transcribe(self, task_id: str, video_id: str) -> dict:
         if not normalized_uri:
             clear_task_context()
             raise NonRetryableTaskError("[NOT_NORMALIZED] Video has no normalized_uri.")
-        video_path = os.path.join(storage_root, normalized_uri[len("storage://"):] if normalized_uri.startswith("storage://") else normalized_uri)
+        video_path = os.path.join(
+            storage_root,
+            normalized_uri[len("storage://") :]
+            if normalized_uri.startswith("storage://")
+            else normalized_uri,
+        )
         if not os.path.exists(video_path):
             clear_task_context()
             raise NonRetryableTaskError(f"[FILE_NOT_FOUND] {video_path}")
@@ -71,9 +77,14 @@ def transcribe(self, task_id: str, video_id: str) -> dict:
         adapter = adapter_cls()
         run_id = uuid.uuid4().hex[:16]
         model_run = ModelRun(
-            run_id=run_id, task_id=task_id, video_id=video_id,
-            model_name=model_name, model_version="1.0.0",
-            schema_version="1.0", status="RUNNING", device="cpu",
+            run_id=run_id,
+            task_id=task_id,
+            video_id=video_id,
+            model_name=model_name,
+            model_version="1.0.0",
+            schema_version="1.0",
+            status="RUNNING",
+            device="cpu",
             started_at=datetime.now(timezone.utc),
         )
         session.add(model_run)
@@ -86,25 +97,32 @@ def transcribe(self, task_id: str, video_id: str) -> dict:
         with get_sync_session() as session:
             TaskRepository(session).set_error(task_id, "MODEL_LOAD_FAILED", str(e))
             mr = session.get(ModelRun, run_id)
-            if mr: mr.status = "FAILED"; mr.finished_at = datetime.now(timezone.utc)
+            if mr:
+                mr.status = "FAILED"
+                mr.finished_at = datetime.now(timezone.utc)
             session.commit()
         clear_task_context()
         raise NonRetryableTaskError(f"[MODEL_LOAD_FAILED] {e}")
 
     try:
         t0 = time.monotonic()
-        output = adapter.predict({
-            "task_id": task_id, "video_id": video_id,
-            "model": {"name": model_name, "version": "1.0.0"},
-            "input": {"video_uri": normalized_uri},
-            "parameters": {},
-        })
+        output = adapter.predict(
+            {
+                "task_id": task_id,
+                "video_id": video_id,
+                "model": {"name": model_name, "version": "1.0.0"},
+                "input": {"video_uri": normalized_uri},
+                "parameters": {},
+            }
+        )
         runtime_ms = int((time.monotonic() - t0) * 1000)
     except Exception as e:
         with get_sync_session() as session:
             TaskRepository(session).set_error(task_id, "TRANSCRIPTION_FAILED", str(e))
             mr = session.get(ModelRun, run_id)
-            if mr: mr.status = "FAILED"; mr.finished_at = datetime.now(timezone.utc)
+            if mr:
+                mr.status = "FAILED"
+                mr.finished_at = datetime.now(timezone.utc)
             session.commit()
         clear_task_context()
         raise NonRetryableTaskError(f"[TRANSCRIPTION_FAILED] {e}")
@@ -112,9 +130,14 @@ def transcribe(self, task_id: str, video_id: str) -> dict:
     if output.get("status") != "SUCCEEDED":
         err = output.get("error", {})
         with get_sync_session() as session:
-            TaskRepository(session).set_error(task_id, err.get("code", "FAILED"), err.get("message", ""))
+            TaskRepository(session).set_error(
+                task_id, err.get("code", "FAILED"), err.get("message", "")
+            )
             mr = session.get(ModelRun, run_id)
-            if mr: mr.status = "FAILED"; mr.runtime_ms = runtime_ms; mr.finished_at = datetime.now(timezone.utc)
+            if mr:
+                mr.status = "FAILED"
+                mr.runtime_ms = runtime_ms
+                mr.finished_at = datetime.now(timezone.utc)
             session.commit()
         clear_task_context()
         raise NonRetryableTaskError(f"[{err.get('code', 'FAILED')}] {err.get('message', '')}")
@@ -134,26 +157,40 @@ def transcribe(self, task_id: str, video_id: str) -> dict:
         "subtitle_segments": segments,
     }
     manifest = writer.write_json_artifact(
-        relative_path=subtitles_rel, data=subtitles_data,
-        artifact_type="subtitle_segments", artifact_id=f"{run_id}_subtitles",
-        video_id=video_id, run_id=run_id, producer=producer,
+        relative_path=subtitles_rel,
+        data=subtitles_data,
+        artifact_type="subtitle_segments",
+        artifact_id=f"{run_id}_subtitles",
+        video_id=video_id,
+        run_id=run_id,
+        producer=producer,
     )
 
     with get_sync_session() as session:
         ArtifactRepository(session).create(
-            artifact_id=f"{run_id}_subtitles", video_id=video_id, run_id=run_id,
-            artifact_type="subtitle_segments", uri=f"storage://{subtitles_rel}",
-            format="json", sha256=manifest.output.sha256,
+            artifact_id=f"{run_id}_subtitles",
+            video_id=video_id,
+            run_id=run_id,
+            artifact_type="subtitle_segments",
+            uri=f"storage://{subtitles_rel}",
+            format="json",
+            sha256=manifest.output.sha256,
         )
         mr = session.get(ModelRun, run_id)
-        if mr: mr.status = "SUCCEEDED"; mr.runtime_ms = runtime_ms; mr.finished_at = datetime.now(timezone.utc)
+        if mr:
+            mr.status = "SUCCEEDED"
+            mr.runtime_ms = runtime_ms
+            mr.finished_at = datetime.now(timezone.utc)
         TaskRepository(session).update_progress(task_id, 50, stage="transcribe")
         session.commit()
 
     clear_task_context()
     return {
-        "task_id": task_id, "video_id": video_id, "run_id": run_id,
-        "status": "SUCCEEDED", "stage": "transcribe",
+        "task_id": task_id,
+        "video_id": video_id,
+        "run_id": run_id,
+        "status": "SUCCEEDED",
+        "stage": "transcribe",
         "artifacts": {"subtitles": f"storage://{subtitles_rel}"},
         "metrics": {"segment_count": len(segments), "runtime_ms": runtime_ms},
     }

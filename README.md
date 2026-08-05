@@ -129,17 +129,40 @@ curl http://localhost:8000/health
 | `GET` | `/api/v1/videos/{id}/results` | 获取分析结果 |
 | `GET` | `/api/v1/models/{name}/health` | 模型健康检查（预留） |
 
+## 模型接入
+
+| 模型 | Task Name | 类型 | 说明 |
+|------|-----------|------|------|
+| FFmpeg | `video.normalize` | CPU | 视频归一化 (H.264+yuv420p CFR) |
+| OmniShotCut | `shot.detect` | CPU | Shot 边界检测 |
+| PyAV | `video.extract_keyframes` | CPU | 每 shot 2 帧关键帧 (25%+75%) |
+| Doubao ASR | `subtitle.transcribe` | CPU | 语音转文字（火山引擎） |
+| Qwen2.5-VL | `scene.score_vlm` | API | Location + Character 评分 |
+| DeepSeek | `scene.score_plot` | API | 叙事事件 + Plot 评分 |
+| Score Merger | `scene.merge_scores` | CPU | 加权合并 → 最终场景 |
+
 ## Worker Queue 路由
 
-| Queue | 任务类型 | Device |
-|-------|----------|--------|
-| `video` | FFmpeg 预处理、标准化 | CPU |
-| `shot` | Shot Boundary Detection | GPU |
-| `subtitle` | Whisper 转录 | GPU |
-| `feature` | 视觉/音频特征提取 | GPU |
-| `scene` | Scene Boundary + Score | GPU |
-| `final` | 结果组装 | CPU |
-| `maintenance` | 临时文件清理 | CPU |
+| Queue | 任务 |
+|-------|------|
+| `video` | `video.normalize`, `video.extract_keyframes` |
+| `shot` | `shot.detect` |
+| `subtitle` | `subtitle.transcribe` |
+| `scene` | `scene.score_vlm`, `scene.score_plot`, `scene.merge_scores` |
+| `final` | `final.pipeline_complete` |
+| `maintenance` | 临时文件清理 |
+
+## Pipeline
+
+```
+video.normalize → shot.detect
+  → group(video.extract_keyframes, subtitle.transcribe)
+    → group(scene.score_vlm, scene.score_plot)
+      → scene.merge_scores → final.pipeline_complete
+```
+
+关键帧 320px proxy 模式（`--vlm-proxy`）使 2h 电影 VLM 评分从 ~57h 降至 ~3min。
+Doubao ASR 自动对大音频分片并行（`>15min` → `ThreadPoolExecutor`）。
 
 ## 开发命令
 

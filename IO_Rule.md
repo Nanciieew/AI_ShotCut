@@ -1,8 +1,8 @@
 # 模型输入输出规范
 
-> **适用范围**：所有通过 Adapter 接入的 AI 模型（OmniShotCut、Whisper、Visual Encoder、Audio Encoder、Scene Boundary 等）。  
+> **适用范围**：所有通过 Adapter 接入的 AI 模型（OmniShotCut、Doubao ASR、Qwen2.5-VL、DeepSeek 等）。  
 > **强制级别**：每个模型 Adapter 必须严格遵守此规范。  
-> **版本**：1.0
+> **版本**：1.1（新增 VLM/LLM scoring + Score Merge 规范）
 
 ---
 
@@ -118,6 +118,13 @@
 | `REDIS_UNAVAILABLE` | true | Redis 短暂不可用 |
 | `WORKER_LOST` | true | Worker 进程退出 |
 | `MODEL_DOWNLOAD_TIMEOUT` | true | 模型下载超时 |
+| `TRANSCRIPTION_FAILED` | false | Doubao ASR API 调用失败 |
+| `VLM_INFERENCE_FAILED` | true | Qwen VL API 调用失败 |
+| `PLOT_INFERENCE_FAILED` | true | DeepSeek API 调用失败 |
+| `AUDIO_EXTRACTION_FAILED` | false | FFmpeg 音频提取失败 |
+| `SHOTS_NOT_FOUND` | false | 上游 shot.detect 未执行或无输出 |
+| `SUBTITLES_NOT_FOUND` | false | 上游字幕未生成 |
+| `TOO_FEW_SHOTS` | false | Shot 数量不足以评分 (<2) |
 
 ---
 
@@ -164,48 +171,41 @@
 
 ---
 
-### 4.2 Whisper — Speech to Text
+### 4.2 Doubao ASR — Speech to Text (subtitle.transcribe)
 
-**输入**（从音频转写）：
+**输入**：
 ```json
 {
   "schema_version": "1.0",
   "task_id": "task_001",
   "video_id": "video_001",
-  "model": { "name": "whisper", "version": "large-v3" },
+  "model": { "name": "whisper", "version": "1.0.0" },
   "input": {
-    "audio_uri": "storage://projects/project_001/videos/video_001/normalized/audio.wav"
+    "audio_uri": "storage://.../audio.wav",
+    "video_uri": "storage://.../normalized.mp4"
   },
   "parameters": {
-    "word_timestamps": true,
     "language": "zh"
   }
 }
 ```
 
-**输入**（解析已有字幕）：
-```json
-{
-  "input": {
-    "subtitle_uri": "storage://projects/project_001/videos/video_001/source/subtitles.srt",
-    "subtitle_format": "srt"
-  }
-}
-```
+> 火山引擎 OpenSpeech API。`video_uri` 存在时自动 ffmpeg 提取 16kHz mono WAV。
+> 音频 >15min 自动分片 + ThreadPoolExecutor 并行，合并时间戳。
 
 **输出 Artifact**：`subtitles.json`
 
 ```json
 {
   "video_id": "video_001",
-  "subtitle_source": "whisper",
+  "subtitle_source": "doubao_asr",
   "language": "zh",
   "subtitle_segments": [
     {
       "subtitle_id": "subtitle_000001",
       "start_ms": 1260,
       "end_ms": 3480,
-      "text": "我们必须马上离开。",
+      "text": "...",
       "language": "zh",
       "confidence": 0.91
     }
@@ -213,9 +213,106 @@
 }
 ```
 
+> 极速模式 (bigmodel) 返回纯文本无 utterance 级时间戳 → adapter 生成单个 segment。
+
 ---
 
-### 4.3 Visual Encoder — Visual Feature Extraction
+### 4.3 VLM Scene Boundary — Location + Character 评分 (scene.score_vlm)
+
+**输入**：
+```json
+{
+  "schema_version": "1.0",
+  "task_id": "task_001",
+  "video_id": "video_001",
+  "model": { "name": "vlm_scene_boundary", "version": "0.1.0" },
+  "input": {
+    "shots_uri": "storage://.../shots.json",
+    "keyframes_dir": "storage://.../shot_keyframes/1.0.0"
+  },
+  "parameters": {}
+}
+```
+
+> Qwen2.5-VL via modelarts-maas API。自适应 batch_size（320px→200, 672px→3）。
+> 优先使用 `shot_keyframes_proxy/` 目录。
+
+**输出 Artifact**：`location_character_scores.json`
+
+```json
+{
+  "video_id": "video_001",
+  "scores": [
+    {
+      "shot_id": "shot_000105",
+      "location_change": 92,
+      "character_group_change": 15,
+      "reason": "室内办公室→户外街道"
+    }
+  ]
+}
+```
+
+---
+
+### 4.4 LLM Plot — 叙事事件 + Plot 评分 (scene.score_plot)
+
+**输入**：
+```json
+{
+  "schema_version": "1.0",
+  "task_id": "task_001",
+  "video_id": "video_001",
+  "model": { "name": "deepseek_plot", "version": "1.0.0" },
+  "input": {
+    "subtitles_uri": "storage://.../subtitles.json",
+    "shots_uri": "storage://.../shots.json"
+  }
+}
+```
+
+> DeepSeek 从完整字幕规划大/中/小三级叙事事件 → 映射到 shot boundary。
+> Plot 分: major=100, medium=60, minor=30。
+
+**输出 Artifact**：`plot_scores.json`
+
+```json
+{
+  "video_id": "video_001",
+  "events": [
+    { "label": "准备武器", "level": "major", "time_range": { "start_ms": 0, "end_ms": 600000 } }
+  ],
+  "plot_scores": [
+    { "shot_id": "shot_000105", "plot_change": 60 }
+  ]
+}
+```
+
+---
+
+### 4.5 Score Merge — 加权合并 (scene.merge_scores)
+
+**四种模式** (`mode` 参数):
+
+| mode | 权重 (L, C, P) | 说明 |
+|------|---------------|------|
+| `weighted` | (0.35, 0.35, 0.30) | 默认均衡 |
+| `location_only` | (1, 0, 0) | 只看场所 |
+| `character_only` | (0, 1, 0) | 只看人物 |
+| `plot_only` | (0, 0, 1) | 只看情节 |
+| `custom` | (L/total, C/total, P/total) | 用户 1-10 slider |
+
+```python
+scene_score = round(w_l * location + w_c * character + w_p * plot)
+```
+
+> 阈值=50，最小场景=30s。Greedy 选点。
+
+**输出 Artifact**：`final_result.json`
+
+---
+
+### 4.6 Visual Encoder (stub)
 
 **输入**：
 ```json

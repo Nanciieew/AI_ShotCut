@@ -264,7 +264,8 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
 
     # Build prompt
     sub_lines = [
-        f"[{int(s['start_ms'] // 60000):02d}:{(s['start_ms'] % 60000) / 1000:05.2f}] {s['text'][:80]}"
+        f"[{int(s['start_ms'] // 60000):02d}:"
+        f"{(s['start_ms'] % 60000) / 1000:05.2f}] {s['text'][:80]}"
         for s in subtitles
     ]
     sub_timeline = "\n".join(sub_lines)
@@ -318,7 +319,7 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
             m = re.search(r'\{[\s\S]*"events"[\s\S]*\}', raw_text)
             events = json.loads(m.group()).get("events", []) if m else []
 
-    LEVEL_SCORE = {"major": 100, "medium": 60, "minor": 30}
+    level_score_map = {"major": 100, "medium": 60, "minor": 30}
     plot_scores = []
     for i, shot in enumerate(shots[:-1]):
         boundary_ms = shot["end_ms"]
@@ -330,7 +331,7 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
             if evt_start <= boundary_ms < evt_end:
                 continue
             if abs(boundary_ms - evt_start) < 500:
-                score = LEVEL_SCORE.get(evt.get("level", "minor"), 30)
+                score = level_score_map.get(evt.get("level", "minor"), 30)
                 if score > max_score:
                     max_score = score
         if max_score > 0:
@@ -424,23 +425,23 @@ def merge_scores(
     """
     # Compute weights
     if mode == "location_only":
-        W = (1.0, 0.0, 0.0)
+        w = (1.0, 0.0, 0.0)
     elif mode == "character_only":
-        W = (0.0, 1.0, 0.0)
+        w = (0.0, 1.0, 0.0)
     elif mode == "plot_only":
-        W = (0.0, 0.0, 1.0)
+        w = (0.0, 0.0, 1.0)
     elif mode == "custom":
         total = location_weight + character_weight + plot_weight
         if total <= 0:
-            W = (0.35, 0.35, 0.30)
+            w = (0.35, 0.35, 0.30)
         else:
-            W = (
+            w = (
                 location_weight / total,
                 character_weight / total,
                 plot_weight / total,
             )
     else:
-        W = (0.35, 0.35, 0.30)
+        w = (0.35, 0.35, 0.30)
 
     model_name = "scene_merger"
     set_task_context(task_id=task_id, video_id=video_id, model=model_name)
@@ -497,8 +498,8 @@ def merge_scores(
                 plot_by_shot[p["shot_id"]] = p
 
     # Score every boundary
-    INTENSITY_RATIOS = {"high": 0.06, "medium": 0.04, "low": 0.01}
-    MIN_DISTANCE_MS = min_distance_s * 1000
+    intensity_ratios = {"high": 0.06, "medium": 0.04, "low": 0.01}
+    min_distance_ms = min_distance_s * 1000
     merged: list[dict] = []
     for i, shot in enumerate(shots[:-1]):
         sid = shot["shot_id"]
@@ -507,23 +508,27 @@ def merge_scores(
         char = q.get("character_group_change", 0)
         p = plot_by_shot.get(sid, {})
         plot = p.get("plot_change", p.get("plot_change_score", 0))
-        scene_score = round(W[0] * loc + W[1] * char + W[2] * plot)
-        merged.append({
-            "shot_id": sid, "boundary_index": i,
-            "timestamp_ms": shot["end_ms"],
-            "location_change": loc, "character_group_change": char,
-            "plot_change_score": plot, "scene_score": scene_score,
-        })
+        scene_score = round(w[0] * loc + w[1] * char + w[2] * plot)
+        merged.append(
+            {
+                "shot_id": sid,
+                "boundary_index": i,
+                "timestamp_ms": shot["end_ms"],
+                "location_change": loc,
+                "character_group_change": char,
+                "plot_change_score": plot,
+                "scene_score": scene_score,
+            }
+        )
 
     # Greedy: rank by scene_score desc, pick top K with min_distance
-    target_count = max(3, int(len(shots) * INTENSITY_RATIOS[intensity]))
+    target_count = max(3, int(len(shots) * intensity_ratios[intensity]))
     ranked = sorted(merged, key=lambda b: b["scene_score"], reverse=True)
     selected: list[dict] = []
     for b in ranked:
         if b["scene_score"] == 0:
             continue
-        if any(abs(b["timestamp_ms"] - s["timestamp_ms"]) < MIN_DISTANCE_MS
-               for s in selected):
+        if any(abs(b["timestamp_ms"] - s["timestamp_ms"]) < min_distance_ms for s in selected):
             continue
         selected.append(b)
         if len(selected) >= target_count:
@@ -534,32 +539,44 @@ def merge_scores(
     candidate_boundaries: list[dict] = []
     for s in selected:
         m, sec = divmod(s["timestamp_ms"], 60000)
-        candidate_boundaries.append({
-            "shot_id": s["shot_id"], "boundary_index": s["boundary_index"],
-            "timestamp_ms": s["timestamp_ms"],
-            "timestamp_readable": f"{int(m):02d}:{sec / 1000:05.2f}",
-            "scene_score": s["scene_score"],
-            "location_change": s["location_change"],
-            "character_group_change": s["character_group_change"],
-            "plot_change_score": s["plot_change_score"],
-        })
+        candidate_boundaries.append(
+            {
+                "shot_id": s["shot_id"],
+                "boundary_index": s["boundary_index"],
+                "timestamp_ms": s["timestamp_ms"],
+                "timestamp_readable": f"{int(m):02d}:{sec / 1000:05.2f}",
+                "scene_score": s["scene_score"],
+                "location_change": s["location_change"],
+                "character_group_change": s["character_group_change"],
+                "plot_change_score": s["plot_change_score"],
+            }
+        )
 
     # Build final scenes from selected boundaries
     final_scenes = []
     scene_start, scene_start_shot = shots[0]["start_ms"], shots[0]["shot_id"]
     for b in selected:
-        final_scenes.append({
-            "start_shot": scene_start_shot, "end_shot": b["shot_id"],
-            "start_ms": scene_start, "end_ms": b["timestamp_ms"],
-            "scene_score": b["scene_score"],
-        })
+        final_scenes.append(
+            {
+                "start_shot": scene_start_shot,
+                "end_shot": b["shot_id"],
+                "start_ms": scene_start,
+                "end_ms": b["timestamp_ms"],
+                "scene_score": b["scene_score"],
+            }
+        )
         next_idx = b["boundary_index"] + 1
         scene_start = shots[next_idx]["start_ms"] if next_idx < len(shots) else b["timestamp_ms"]
         scene_start_shot = shots[next_idx]["shot_id"] if next_idx < len(shots) else b["shot_id"]
-    final_scenes.append({
-        "start_shot": scene_start_shot, "end_shot": shots[-1]["shot_id"],
-        "start_ms": scene_start, "end_ms": shots[-1]["end_ms"], "scene_score": 0,
-    })
+    final_scenes.append(
+        {
+            "start_shot": scene_start_shot,
+            "end_shot": shots[-1]["shot_id"],
+            "start_ms": scene_start,
+            "end_ms": shots[-1]["end_ms"],
+            "scene_score": 0,
+        }
+    )
 
     # Save
     project_id = "default"
@@ -576,9 +593,11 @@ def merge_scores(
         "video_id": video_id,
         "shot_count": n,
         "boundary_count": n - 1,
-        "weights": {"location": W[0], "character": W[1], "plot": W[2]},
-        "mode": mode, "intensity": intensity, "target_count": target_count,
-        "min_distance_ms": MIN_DISTANCE_MS,
+        "weights": {"location": w[0], "character": w[1], "plot": w[2]},
+        "mode": mode,
+        "intensity": intensity,
+        "target_count": target_count,
+        "min_distance_ms": min_distance_ms,
         "merged_scores": merged,
         "candidate_boundaries": candidate_boundaries,
         "final_scenes": final_scenes,

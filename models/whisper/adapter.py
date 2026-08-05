@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 import subprocess
 import time
-from typing import Any
 
 from models.base.adapter import BaseModelAdapter
 from models.whisper.providers.doubao_asr import DoubaoASRProvider

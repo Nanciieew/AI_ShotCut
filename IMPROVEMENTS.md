@@ -1,284 +1,90 @@
-# IMPROVEMENTS.md — 问题清单与技术债跟踪
+﻿# IMPROVEMENTS.md — 近期改进记录
 
-> 每条改进项必须有唯一 ID（IMP-xxx）。
-> 开始编码前阅读 CLAUDE.md → 查找对应 IMP → 创建/更新条目。
-> 完成后填写 Completion Log，全部 AC 通过才能标 Done。
+> 更新规则：重大功能、架构变化、性能优化写入此文件。临时 bug 和 TODO 保留。
 
 ---
 
-## 状态与优先级定义
+## 2026-08-05: Scene Score 计算模式 + 自适应 Batch + 音频分片
 
-**状态**：Proposed → Planned → In Progress → Blocked → Done → Rejected
+### 四种 Scene Score 模式
+- location_only: 只看场所变化 (w=1,0,0)
+- character_only: 只看人物变化 (w=0,1,0)
+- plot_only: 只看情节变化 (w=0,0,1)
+- custom: 用户可调 L/C/P 权重 (1-10 -> 归一化)
+- CLI: python merge_scores.py --mode plot_only
 
-**优先级**：
-- **P0**：阻塞系统运行、数据错误或严重架构风险
-- **P1**：核心功能缺失或明显影响开发效率
-- **P2**：一般功能增强、可靠性或可维护性改进
-- **P3**：低优先级优化、体验或清理工作
+### VLM 自适应 Batch Size
+- 320px proxy -> batch_size=200（大幅减少 API 调用）
+- 672px -> batch_size=3
+- 自动检测首帧分辨率，无需手动配置
 
----
+### Doubao ASR 自动分片
+- 音频 >15min -> ffmpeg 切段 + ThreadPoolExecutor 并行
+- 2h 电影从不可用 -> ~10s 完成全部转录
+- 自动合并 chunk 结果 + 时间戳偏移
 
-## 改进列表
+### 320x180 VLM Proxy 关键帧
+- scripts/extract_keyframes.py --vlm-proxy
+- 2h 电影 VLM 评分: 57h -> ~3min
+- Celery task 自动检测 proxy 目录优先使用
 
----
-
-### IMP-001 — 基础工程搭建
-
-- **Title**: 项目基础工程骨架搭建
-- **Status**: Done
-- **Priority**: P0
-- **Module**: Infrastructure
-- **Target State**: 目录结构、配置文件、Docker、FastAPI 骨架、Celery 骨架、统一 Schema、Core 层全部就位。
-
-### Completion Log
-
-- **Completed Date**: 2026-07-27
-- **Summary**: 完成项目基础工程全部骨架搭建（44 个文件，25 个目录）。
-- **Acceptance Criteria**:
-  - [x] 目录结构符合架构规范 §9
-  - [x] `.env.example` 包含所有必要变量
-  - [x] Docker Compose 定义完整
-  - [x] `/health` 端点已实现
-  - [x] Celery Worker 代码骨架完成
-  - [x] 数据库模型定义完整（9 个表）
-  - [x] CLAUDE.md 记录完整架构规则
-  - [x] IMPROVEMENTS.md 创建
-  - [x] IO_Rule.md 定义模型统一 Contract
+### 关键帧优化
+- 每 shot 从 3 帧 -> 2 帧 (25%+75%，去掉无用的 50%)
+- 18 个测试全部通过
 
 ---
 
-### IMP-002 — 后端结构补全
+## 2026-08-04: Doubao ASR + Qwen VL + DeepSeek 完整链路
 
-- **Title**: 后端项目结构补全（Alembic、依赖分层、CI、健康检查、Artifact Manifest 等）
-- **Status**: Done
-- **Priority**: P0
-- **Module**: Infrastructure
-- **Target State**: 项目具备完整的迁移、测试、CI、日志、队列路由、配置校验等基础设施。
+### Doubao ASR 接入
+- 取代本地 Whisper 模型，使用火山引擎 OpenSpeech API
+- 认证: X-Api-Key + UUID-only key (从 api-key:uuid 格式自动提取)
+- 支持中文/英文自动检测
 
-### Completion Log
+### Qwen VL Location + Character 评分
+- scene.score_vlm: 对每个 shot 边界评估场所变化 + 人物群体变化
+- 输入: 关键帧对 (shot A 尾帧 + shot B 首帧)
+- 输出: location_change (0-100) + character_group_change (0-100)
 
-- **Completed Date**: 2026-07-27
-- **Summary**: 完成文档要求的全部 22 个章节的补全工作。
-- **Files Changed**:
-  - **新增**：`alembic/`（env.py, script.py.mako, README）、`alembic.ini`
-  - **新增**：`requirements/base.txt, api.txt, worker.txt, dev.txt, models/*.txt`
-  - **新增**：`.pre-commit-config.yaml`、`.github/workflows/ci.yml`
-  - **新增**：`scripts/dev/`（start, stop, test, lint, migrate, check）
-  - **新增**：`tests/conftest.py`、`scripts/generate_test_fixtures.py`
-  - **新增**：`core/artifacts/`（manifest, writer, validator, hashing）
-  - **新增**：`core/logging/`（config, context, middleware）
-  - **新增**：`core/config.py`（统一 Settings 类）
-  - **新增**：`workers/tasks/maintenance_tasks.py`
-  - **新增**：`configs/workers.yaml`（CPU/GPU 分组）
-  - **新增**：`models/registry.yaml`
-  - **新增**：`schemas/v1/__init__.py`, `schemas/compatibility/__init__.py`
-  - **新增**：`data/tmp/.gitkeep`
-  - **修改**：`docker-compose.yml`（migrate 服务、健康检查、启动顺序）
-  - **修改**：`apps/api/main.py`（`/health/live`、`/health/ready`、日志中间件）
-  - **修改**：`workers/celery_app.py`（task_routes、maintenance 队列）
-  - **修改**：`core/storage/local.py`（uri_to_local_path）
-  - **修改**：`pyproject.toml`（ruff format, coverage 配置）
-  - **修改**：`requirements.txt`、`.env.example`、`.gitignore`
-  - **修改**：`README.md`、`CLAUDE.md`、`项目图纸.md`
-- **Acceptance Criteria**:
-  - [x] Alembic 可以正常迁移数据库
-  - [x] Docker Compose 有健康检查和启动顺序
-  - [x] API 有 live 和 ready 健康检查
-  - [x] Celery Queue 路由明确（7 个队列）
-  - [x] CPU/GPU Task 分类已预留（configs/workers.yaml）
-  - [x] 依赖已分层并固定版本
-  - [x] Ruff、MyPy、Pytest 可以运行
-  - [x] 基础 CI 已配置（6 个 job）
-  - [x] Artifact Manifest 已定义
-  - [x] Schema 版本规则已明确
-  - [x] 测试 Fixture 生成方式已提供
-  - [x] 模型 Registry 已建立（含 License 字段）
-  - [x] License 状态不会被猜测
-  - [x] 日志支持完整链路 ID
-  - [x] 临时文件清理 Task 已建立
-  - [x] 配置启动时会被校验
-  - [x] README 和 Agent 文档已同步
-  - [x] 不引入任何 action_score 或 plot_score
-- **Remaining Issues**: 无
-- **Follow-up Improvement IDs**: IMP-003
+### DeepSeek 叙事事件 + Plot 评分
+- scene.score_plot: 从字幕规划大/中/小三级叙事事件
+- Plot 分映射: major=100, medium=60, minor=30
+- 事件 -> shot boundary 自动对齐
+
+### Celery Task 注册
+- workers/tasks/scene_score_tasks.py: 3 个新 task
+- workers/tasks/subtitle_tasks.py: stub -> 完整 Doubao 实现
+- core/orchestration/omnishotcut_pipeline.py: group 并行链
+
+### 全流程自动化
+- run_complete_pipeline.py: 视频输入 -> 归一化 -> Shot -> 关键帧 -> 字幕 -> VLM -> LLM -> 合并
+- 测试通过: Complete_test1 (1.1GB, 15min, 167 shots, 10 场景)
 
 ---
 
-### IMP-009 — OmniShotCut SPIKE 完成
+## 2026-08-01: PR 拆分 + CI 修复
 
-- **Title**: OmniShotCut 模型 SPIKE 验证
-- **Status**: Done
-- **Priority**: P0
-- **Module**: models/omnishotcut
+### OmniShotCut 双 PR 拆分
+- PR1: OmniShotCut 基础闭环 (18 commits, 115 files -> master)
+- PR2: 关键帧提取 + 编排修正 (2 commits, 19 files -> master)
+- CI: ruff lint/format 全通过, MyPy 0 issues, 150/150 tests
 
-### Completion Log
+### Orchestration 修正
+- 所有 chain link -> immutable signature
+- 失败传播: return FAILED dict -> raise NonRetryableTaskError
+- 仅 final.pipeline_complete 标记 Task SUCCEEDED
+- get_artifact_for_task(): task-scoped artifact lookup
 
-- **Completed Date**: 2026-07-28
-- **Summary**: OmniShotCut 已安装、权重已下载、License 已核验、CPU 推理验证通过。
-- **Key Findings**:
-  - **License**: MIT（code + weights）
-  - **Commit**: `23ad6fb41b296fb9258b0e7825125a914573b906`
-  - **Weights**: HuggingFace Hub `uva-cv-lab/OmniShotCut`, 156.5 MB
-  - **CPU runtime**: ~22s for short demo clip (26 shots detected)
-  - **Output format**: `[[start_frame, end_frame], ...]` — frames, **inclusive** end
-  - **Confidence**: NOT available in clean_shot mode
-  - **CUDA patch needed**: engine.py hard-codes `.to("cuda")` (3 lines)
-  - **FFmpeg**: Required via `ffmpeg-python`
-- **Acceptance Criteria**:
-  - [x] OmniShotCut import OK
-  - [x] Weights downloaded + SHA256 verified
-  - [x] License verified (MIT)
-  - [x] CPU inference confirmed
-  - [x] 10 SPIKE questions answered
-  - [ ] Adapter written (Adapter pending — IMP-010)
-- **Follow-up Improvement IDs**: IMP-010 (OmniShotCut Adapter)
+### 关键帧提取
+- PyAV 单次顺序解码
+- 整数帧数学 (无 round(), 无浮点位置)
+- PTS 校验 + 672px JPEG 缩放 + SHA-256 + 原子写入
 
 ---
 
-### IMP-011 — 置信度暴露 + 帧间像素差验证
+## 已知待处理
 
-- **Title**: Engine patch 暴露 softmax 置信度 + frame-diff 误检过滤
-- **Status**: Done
-- **Priority**: P1
-- **Module**: models/omnishotcut
-
-### Completion Log
-
-- **Completed Date**: 2026-07-28
-- **Summary**: Patch engine.py 暴露 softmax 概率 → 发现所有检测 conf > 0.99 无区分力 → 转向帧差方案 → MAD < 5 阈值完美区分真/假切。
-- **Key Findings**:
-  - Softmax 置信度在所有检测上均 > 0.99（含误检），无法用于过滤
-  - 帧间像素差 MAD 真硬切 > 15，假切 < 3，差距 > 一个数量级
-  - MAD < 5 + hist_corr > 0.95 阈值：4/5 视频匹配 ground truth
-- **Acceptance Criteria**:
-  - [x] engine.py patch：`_run_on_numpy` 返回 confidences
-  - [x] merge_predictions 置信度感知合并
-  - [x] `frame_diff.py`：MAD + histogram correlation + filter
-  - [x] run_benchmark.py 集成帧差过滤
-  - [x] 误检全部清除（Hard_Cut_1: 1FP, No_Cut_hard: 3FP）
-  - [x] 真检全部保留
-- **Remaining Issues**: Multiple_Cuts_smooth dissolve 盲区（模型 128×96 固有限制）
-- **Follow-up Improvement IDs**: IMP-012
-
----
-
-### IMP-012 — OmniShotCut 已知限制
-
-- **Title**: OmniShotCut dissolve/wipes 盲区 — 128×96 分辨率限制
-- **Status**: Proposed
-- **Priority**: P2
-- **Module**: models/omnishotcut
-- **Current Problem**: Dissolve/wipe 转场在 128×96 推理分辨率下完全不可见。Multiple_Cuts_smooth 漏检 4/6 溶解边界。模型虽然定义了 Dissolve/Wipe/Fade 等标签，但从未激活（全部标记为 General）。
-- **Target State**: 接入专用于 dissolve 检测的高分辨率模型，或后处理阶段用多帧像素差滑动窗口检测渐变。
-- **Updated Date**: 2026-07-28
-
----
-
-### IMP-010 — OmniShotCut Adapter 实现
-
-- **Title**: OmniShotCut Adapter — 原始输出 → Shot Schema 转换
-- **Status**: Done
-- **Priority**: P0
-- **Module**: models/omnishotcut
-
-### Completion Log
-
-- **Completed Date**: 2026-07-28
-- **Summary**: Adapter 实现 BaseModelAdapter，集成 frame_diff 后处理，端到端 5 视频验证通过。
-- **Files Changed**:
-  - `models/omnishotcut/adapter.py` — 重写：frame_diff 集成 + 新 API + ffmpeg PATH
-  - `models/omnishotcut/converter.py` — 帧→ms 转换
-  - `models/omnishotcut/validation.py` — Schema 校验
-  - `models/omnishotcut/frame_diff.py` — MAD/hist_corr 过滤
-  - `scripts/experiments/omnishotcut/run_adapter.py` — 端到端脚本
-  - `scripts/experiments/omnishotcut/run_benchmark.py` — 更新
-  - `tests/fixtures/normalized_outputs/omnishotcut/` — 5 个 .shots.json
-- **Acceptance Criteria**:
-  - [x] 帧→毫秒转换（FPS 分数驱动）
-  - [x] 输出通过 `schemas/shot.py` 校验
-  - [x] 5 视频全部处理成功
-  - [x] 输出为 IO_Rule §2 统一格式
-  - [x] Frame-diff 后 4/5 匹配 ground truth
-  - [x] metrics 含 raw/filtered/FP 统计
-- **Remaining Issues**: Multiple_Cuts_smooth dissolve 盲区（IMP-012）
-- **Follow-up Improvement IDs**: IMP-013 (Celery Task 对接)
-
----
-
-### IMP-003 — 任务系统实现
-
-- **Title**: Celery 任务系统闭环实现
-- **Status**: Proposed
-- **Priority**: P0
-- **Module**: Workers + Tasks
-- **Current Problem**: Celery 骨架和路由已搭建，但任务逻辑全为占位符。
-- **Target State**: API 创建任务 → Celery 执行任务 → 数据库状态变化 → 前端可查询。
-- **Acceptance Criteria**:
-  - [ ] API 创建任务返回 task_id
-  - [ ] Celery 执行任务并更新数据库状态
-  - [ ] 查询接口返回实时进度
-  - [ ] 失败任务正确记录错误信息
-  - [ ] 重试规则按配置执行
-- **Related Files**: `workers/tasks/*.py`, `apps/api/routes/videos.py`, `apps/api/routes/tasks.py`, `core/database/repositories/`
-- **Dependencies or Risks**: 依赖 Redis、Celery Worker 实际运行
-- **Updated Date**: 2026-07-27
-
----
-
-### IMP-004 — 视频上传与标准化
-
-- **Title**: 视频上传与 FFmpeg 标准化流水线
-- **Status**: Proposed
-- **Priority**: P0
-- **Module**: Workers + Storage
-- **Acceptance Criteria**:
-  - [ ] 上传 MP4/MKV/MOV 可成功保存
-  - [ ] 生成 normalized.mp4 + audio.wav + metadata.json
-  - [ ] 时间基使用毫秒
-  - [ ] Artifact 路径符合规范
-- **Related Files**: `workers/tasks/video_tasks.py`, `apps/api/routes/videos.py`, `core/storage/local.py`
-- **Updated Date**: 2026-07-27
-
----
-
-### IMP-005 — 依赖冲突风险
-
-- **Title**: 模型依赖版本冲突监控
-- **Status**: Proposed
-- **Priority**: P2
-- **Module**: Dependencies
-- **Current Problem**: 各模型在接入时可能出现 PyTorch/CUDA/依赖版本冲突。
-- **Target State**: 当第一个 GPU 模型接入时，验证并记录所有依赖兼容性。
-- **Updated Date**: 2026-07-27
-
----
-
-### IMP-006 — Docker Worker 拆分
-
-- **Title**: CPU/GPU Worker 独立容器化
-- **Status**: Proposed
-- **Priority**: P2
-- **Module**: Docker
-- **Current Problem**: MVP 共享一个 Worker（CPU+GPU 混合）。
-- **Target State**: 拆分为 `worker-cpu` 和 `worker-gpu` 两个容器。
-- **Updated Date**: 2026-07-27
-
----
-
-### IMP-007 — 对象存储切换
-
-- **Title**: 从本地存储迁移到 S3/MinIO
-- **Status**: Proposed
-- **Priority**: P3
-- **Module**: Storage
-- **Updated Date**: 2026-07-27
-
----
-
-### IMP-008 — 监控与指标
-
-- **Title**: 接入 Prometheus/Grafana 监控
-- **Status**: Proposed
-- **Priority**: P3
-- **Module**: Observability
-- **Updated Date**: 2026-07-27
+- [ ] core/media/ffmpeg.py Stream Copy 优化 (未提交, 需独立测试)
+- [ ] models/vlm_boundary/ ruff lint 清理 (69 预存错误)
+- [ ] Qwen VL 内容审核误拦 (~37% 边界被拒)
+- [ ] 字幕无 utterance 级时间戳 (Doubao 极速模式限制)

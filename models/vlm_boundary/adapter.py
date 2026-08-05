@@ -122,7 +122,10 @@ class VLMSceneBoundaryAdapter(BaseModelAdapter):
                 )
                 all_s.extend(resp.get("data", {}).get("scores", []))
             rt = int((time.monotonic() - t0) * 1000)
-            art = f"projects/{vid[:8]}/videos/{vid}/artifacts/vlm_boundary/{self.version}/location_character_scores.json"
+            art = (
+                f"projects/{vid[:8]}/videos/{vid}/artifacts/"
+                f"vlm_boundary/{self.version}/location_character_scores.json"
+            )
             self._last_result = {"video_id": vid, "scores": all_s}
             return self._ok(
                 tid, vid, sv, "location_character_scores", f"storage://{art}", len(all_s), rt
