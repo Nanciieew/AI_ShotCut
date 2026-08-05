@@ -32,6 +32,8 @@ def build_omnishotcut_canvas(
     location_weight: int = 35,
     character_weight: int = 35,
     plot_weight: int = 30,
+    cut_intensity: str = "medium",
+    min_distance_s: int = 12,
 ) -> chain:
     """Build the OmniShotCut analysis pipeline canvas.
 
@@ -93,7 +95,8 @@ def build_omnishotcut_canvas(
         steps.append(
             app.signature("scene.merge_scores",
                           args=(task_id, video_id, score_mode,
-                                location_weight, character_weight, plot_weight),
+                                location_weight, character_weight, plot_weight,
+                                cut_intensity, min_distance_s),
                           immutable=True, queue="scene")
         )
     elif extract_keyframes:

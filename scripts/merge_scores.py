@@ -36,8 +36,10 @@ def main():
     p.add_argument("--L", type=int, default=35, help="Location weight 1-10 (custom mode)")
     p.add_argument("--C", type=int, default=35, help="Character weight 1-10 (custom mode)")
     p.add_argument("--P", type=int, default=30, help="Plot weight 1-10 (custom mode)")
-    p.add_argument("--threshold", type=int, default=50)
-    p.add_argument("--min-scene-s", type=int, default=30)
+    p.add_argument("--intensity", default="medium", choices=["high", "medium", "low"],
+                   help="high=6%%, medium=4%%, low=1%% of shots as target scene count")
+    p.add_argument("--min-distance-s", type=int, default=12,
+                   help="Minimum seconds between selected boundaries")
     p.add_argument(
         "--shots",
         default="data/local_validation/projects/local_validation/videos/SceneSeg_Test1/artifacts/omnishotcut/0.1.0/shots.json",
@@ -48,8 +50,8 @@ def main():
     args = p.parse_args()
 
     W = compute_weights(args.mode, args.L, args.C, args.P)
-    MIN_SCENE_MS = args.min_scene_s * 1000
-    THRESHOLD = args.threshold
+    INTENSITY_RATIOS = {"high": 0.06, "medium": 0.04, "low": 0.01}
+    MIN_DISTANCE_MS = args.min_distance_s * 1000
 
     # Load
     with open(args.shots) as f:
@@ -68,10 +70,8 @@ def main():
     except FileNotFoundError:
         print("WARNING: Plot scores not found")
 
-    # Merge
-    merged, final_scenes = [], []
-    scene_start, scene_start_shot = shots[0]["start_ms"], shots[0]["shot_id"]
-
+    # Score every boundary
+    merged = []
     for i, shot in enumerate(shots[:-1]):
         sid = shot["shot_id"]
         q = vlm_scores.get(sid, {})
@@ -80,64 +80,76 @@ def main():
         pp = plot_by_shot.get(sid, {})
         plot = pp.get("plot_change", pp.get("plot_change_score", 0))
         scene_score = round(W[0] * loc + W[1] * char + W[2] * plot)
+        merged.append({
+            "shot_id": sid, "boundary_index": i,
+            "timestamp_ms": shot["end_ms"],
+            "location_change": loc, "character_group_change": char,
+            "plot_change_score": plot, "scene_score": scene_score,
+        })
 
-        merged.append(
-            {
-                "shot_id": sid,
-                "location_change": loc,
-                "character_group_change": char,
-                "plot_change_score": plot,
-                "scene_score": scene_score,
-            }
-        )
+    # Greedy: rank by scene_score desc, pick top K with min_distance
+    target_count = max(3, int(len(shots) * INTENSITY_RATIOS[args.intensity]))
+    ranked = sorted(merged, key=lambda b: b["scene_score"], reverse=True)
+    selected = []
+    for b in ranked:
+        if b["scene_score"] == 0:
+            continue
+        if any(abs(b["timestamp_ms"] - s["timestamp_ms"]) < MIN_DISTANCE_MS
+               for s in selected):
+            continue
+        selected.append(b)
+        if len(selected) >= target_count:
+            break
+    selected.sort(key=lambda b: b["timestamp_ms"])
 
-        dur = shot["end_ms"] - scene_start
-        if scene_score >= THRESHOLD and dur >= MIN_SCENE_MS:
-            final_scenes.append(
-                {
-                    "start_shot": scene_start_shot,
-                    "end_shot": sid,
-                    "start_ms": scene_start,
-                    "end_ms": shot["end_ms"],
-                    "scene_score": scene_score,
-                }
-            )
-            scene_start = shots[i + 1]["start_ms"]
-            scene_start_shot = shots[i + 1]["shot_id"]
+    # Candidate boundaries (the selected cut points)
+    candidate_boundaries = []
+    for s in selected:
+        m, sec = divmod(s["timestamp_ms"], 60000)
+        candidate_boundaries.append({
+            "shot_id": s["shot_id"], "boundary_index": s["boundary_index"],
+            "timestamp_ms": s["timestamp_ms"],
+            "timestamp_readable": f"{int(m):02d}:{sec / 1000:05.2f}",
+            "scene_score": s["scene_score"],
+            "location_change": s["location_change"],
+            "character_group_change": s["character_group_change"],
+            "plot_change_score": s["plot_change_score"],
+        })
 
-    final_scenes.append(
-        {
-            "start_shot": scene_start_shot,
-            "end_shot": shots[-1]["shot_id"],
-            "start_ms": scene_start,
-            "end_ms": shots[-1]["end_ms"],
-            "scene_score": 0,
-        }
-    )
+    # Build final scenes from selected boundaries
+    final_scenes = []
+    scene_start, scene_start_shot = shots[0]["start_ms"], shots[0]["shot_id"]
+    for b in selected:
+        final_scenes.append({
+            "start_shot": scene_start_shot, "end_shot": b["shot_id"],
+            "start_ms": scene_start, "end_ms": b["timestamp_ms"],
+            "scene_score": b["scene_score"],
+        })
+        next_idx = b["boundary_index"] + 1
+        scene_start = shots[next_idx]["start_ms"] if next_idx < len(shots) else b["timestamp_ms"]
+        scene_start_shot = shots[next_idx]["shot_id"] if next_idx < len(shots) else b["shot_id"]
+    final_scenes.append({
+        "start_shot": scene_start_shot, "end_shot": shots[-1]["shot_id"],
+        "start_ms": scene_start, "end_ms": shots[-1]["end_ms"], "scene_score": 0,
+    })
 
     output = {
-        "video_id": "SceneSeg_Test1",
-        "shot_count": len(shots),
+        "video_id": "SceneSeg_Test1", "shot_count": len(shots),
         "mode": args.mode,
         "weights": {"location": W[0], "character": W[1], "plot": W[2]},
-        "threshold": THRESHOLD,
-        "min_scene_ms": MIN_SCENE_MS,
+        "intensity": args.intensity, "target_count": target_count,
+        "min_distance_ms": MIN_DISTANCE_MS,
         "merged_scores": merged,
+        "candidate_boundaries": candidate_boundaries,
         "final_scenes": final_scenes,
     }
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
 
-    print(f"Mode: {args.mode}, Weights: ({W[0]:.2f}, {W[1]:.2f}, {W[2]:.2f})")
-    print(f"Scenes: {len(final_scenes)}")
-    for s in final_scenes:
-        m1, s1 = divmod(s["start_ms"], 60000)
-        m2, s2 = divmod(s["end_ms"], 60000)
-        print(
-            f"  {s['start_shot']}→{s['end_shot']}: "
-            f"[{int(m1)}:{s1 / 1000:04.1f}-{int(m2)}:{s2 / 1000:04.1f}] "
-            f"({int((s['end_ms'] - s['start_ms']) / 1000)}s) score={s['scene_score']}"
-        )
+    print(f"Mode: {args.mode}, Intensity: {args.intensity}")
+    print(f"Target: {target_count}, Selected: {len(selected)} boundaries")
+    for cb in candidate_boundaries:
+        print(f"  {cb['shot_id']} @ {cb['timestamp_readable']}  score={cb['scene_score']}")
 
 
 if __name__ == "__main__":
