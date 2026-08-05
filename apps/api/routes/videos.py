@@ -21,21 +21,55 @@ async def upload_video(
     project_id: str = Form(default="default"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Upload a video file and create DB records.
+    """Upload a video file, auto-create project + video records.
 
-    Saves the video to local storage, creates Video + Artifact records,
-    and returns a video_id for subsequent pipeline submission.
+    Saves to: data/projects/{project_id}/videos/{video_id}/source/{filename}
+    Returns video_id for subsequent pipeline submission.
     """
-    # TODO: Implement actual file save to storage (MVP Phase 3)
-    # For now this is a placeholder — use the analyze-shots endpoint
-    # which accepts a pre-staged video path.
+    import os, uuid, shutil
+
+    storage_root = os.getenv("STORAGE_ROOT", "./data")
+    video_id = uuid.uuid4().hex[:12]
+    filename = file.filename or "untitled.mp4"
+
+    # Ensure safe filename
+    safe_name = "".join(c for c in filename if c.isalnum() or c in "._- ")
+    if not safe_name.lower().endswith(".mp4"):
+        safe_name += ".mp4"
+
+    # Auto-create project directory
+    project_dir = os.path.join(storage_root, "projects", project_id)
+    video_dir = os.path.join(project_dir, "videos", video_id, "source")
+    os.makedirs(video_dir, exist_ok=True)
+
+    # Save file
+    dest_path = os.path.join(video_dir, safe_name)
+    with open(dest_path, "wb") as f:
+        content = await file.read()
+        f.write(content)
+
+    # Build storage URI
+    source_uri = f"storage://projects/{project_id}/videos/{video_id}/source/{safe_name}"
+    file_size = os.path.getsize(dest_path)
+
+    # Create DB records (sync)
+    from core.database.repositories import VideoRepository
+    from core.database.session_sync import get_sync_session
+
+    with get_sync_session() as session:
+        video_repo = VideoRepository(session)
+        video_repo.ensure_project(project_id, name=project_id)
+        video_repo.create(video_id=video_id, project_id=project_id, source_uri=source_uri)
+        session.commit()
+
     return {
-        "video_id": "placeholder",
+        "video_id": video_id,
+        "project_id": project_id,
+        "filename": safe_name,
+        "source_uri": source_uri,
+        "size_bytes": file_size,
         "upload_status": "SUCCEEDED",
-        "message": (
-            "upload_video not yet implemented — "
-            "use POST /videos/{id}/analyze-shots with staged video"
-        ),
+        "message": f"Uploaded. Submit pipeline: POST /videos/{video_id}/analyze-shots",
     }
 
 
