@@ -12,7 +12,10 @@ Usage:
     python scripts/extract_keyframes.py ... --vlm-proxy
 """
 
-import argparse, json, sys, time
+import argparse
+import json
+import sys
+import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -28,7 +31,11 @@ def main():
     p.add_argument("--out", required=True, help="Output directory for keyframe images")
     p.add_argument("--max-side", type=int, default=672, help="Max long side pixels (default: 672)")
     p.add_argument("--quality", type=int, default=85, help="JPEG quality (default: 85)")
-    p.add_argument("--vlm-proxy", action="store_true", help="Extract 320×180 proxy for VLM API (replaces shot_keyframes with shot_keyframes_proxy)")
+    p.add_argument(
+        "--vlm-proxy",
+        action="store_true",
+        help="Extract 320×180 proxy for VLM API (replaces shot_keyframes with shot_keyframes_proxy)",
+    )
     p.add_argument("--fps-num", type=int, default=0, help="FPS numerator (auto-detect if 0)")
     p.add_argument("--fps-den", type=int, default=1, help="FPS denominator")
     args = p.parse_args()
@@ -42,14 +49,17 @@ def main():
     out_dir = Path(args.out)
 
     if not Path(video).exists():
-        print(f"ERROR: video not found: {video}"); return 1
+        print(f"ERROR: video not found: {video}")
+        return 1
     if not Path(shots_path).exists():
-        print(f"ERROR: shots not found: {shots_path}"); return 1
+        print(f"ERROR: shots not found: {shots_path}")
+        return 1
 
     with open(shots_path) as f:
         shots = json.load(f).get("shots", [])
     if not shots:
-        print("ERROR: no shots in shots.json"); return 1
+        print("ERROR: no shots in shots.json")
+        return 1
     print(f"Shots: {len(shots)}")
 
     fps_num, fps_den = args.fps_num, args.fps_den
@@ -66,10 +76,12 @@ def main():
                 if fps_num > 0:
                     break
     if fps_num <= 0:
-        print("ERROR: cannot determine FPS — use --fps-num/--fps-den"); return 1
+        print("ERROR: cannot determine FPS — use --fps-num/--fps-den")
+        return 1
     print(f"FPS: {fps_num}/{fps_den}")
 
-    print(f"Computing targets..."); t0 = time.monotonic()
+    print("Computing targets...")
+    t0 = time.monotonic()
     targets = compute_keyframe_targets(shots, fps_num, fps_den)
     print(f"Targets: {len(targets)} unique frames (from {len(shots) * 3} raw)")
 

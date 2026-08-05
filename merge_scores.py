@@ -8,7 +8,8 @@ Usage:
     python merge_scores.py --mode custom --L 5 --C 3 --P 2  # custom 5:3:2
 """
 
-import argparse, json, sys
+import argparse
+import json
 
 
 def compute_weights(mode: str, L: int, C: int, P: int) -> tuple[float, float, float]:
@@ -27,14 +28,20 @@ def compute_weights(mode: str, L: int, C: int, P: int) -> tuple[float, float, fl
 
 def main():
     p = argparse.ArgumentParser(description="Merge scores → final scenes")
-    p.add_argument("--mode", default="weighted",
-                   choices=["weighted", "location_only", "character_only", "plot_only", "custom"])
+    p.add_argument(
+        "--mode",
+        default="weighted",
+        choices=["weighted", "location_only", "character_only", "plot_only", "custom"],
+    )
     p.add_argument("--L", type=int, default=35, help="Location weight 1-10 (custom mode)")
     p.add_argument("--C", type=int, default=35, help="Character weight 1-10 (custom mode)")
     p.add_argument("--P", type=int, default=30, help="Plot weight 1-10 (custom mode)")
     p.add_argument("--threshold", type=int, default=50)
     p.add_argument("--min-scene-s", type=int, default=30)
-    p.add_argument("--shots", default="data/local_validation/projects/local_validation/videos/SceneSeg_Test1/artifacts/omnishotcut/0.1.0/shots.json")
+    p.add_argument(
+        "--shots",
+        default="data/local_validation/projects/local_validation/videos/SceneSeg_Test1/artifacts/omnishotcut/0.1.0/shots.json",
+    )
     p.add_argument("--vlm", default="data/sceneseg_test1_qwen_vlm_scores.json")
     p.add_argument("--plot", default="data/sceneseg_test1_deepseek_plot_v2.json")
     p.add_argument("--out", default="data/sceneseg_test1_final_result.json")
@@ -74,28 +81,49 @@ def main():
         plot = pp.get("plot_change", pp.get("plot_change_score", 0))
         scene_score = round(W[0] * loc + W[1] * char + W[2] * plot)
 
-        merged.append({"shot_id": sid, "location_change": loc,
-                       "character_group_change": char, "plot_change_score": plot,
-                       "scene_score": scene_score})
+        merged.append(
+            {
+                "shot_id": sid,
+                "location_change": loc,
+                "character_group_change": char,
+                "plot_change_score": plot,
+                "scene_score": scene_score,
+            }
+        )
 
         dur = shot["end_ms"] - scene_start
         if scene_score >= THRESHOLD and dur >= MIN_SCENE_MS:
-            final_scenes.append({"start_shot": scene_start_shot, "end_shot": sid,
-                                 "start_ms": scene_start, "end_ms": shot["end_ms"],
-                                 "scene_score": scene_score})
+            final_scenes.append(
+                {
+                    "start_shot": scene_start_shot,
+                    "end_shot": sid,
+                    "start_ms": scene_start,
+                    "end_ms": shot["end_ms"],
+                    "scene_score": scene_score,
+                }
+            )
             scene_start = shots[i + 1]["start_ms"]
             scene_start_shot = shots[i + 1]["shot_id"]
 
-    final_scenes.append({"start_shot": scene_start_shot, "end_shot": shots[-1]["shot_id"],
-                         "start_ms": scene_start, "end_ms": shots[-1]["end_ms"],
-                         "scene_score": 0})
+    final_scenes.append(
+        {
+            "start_shot": scene_start_shot,
+            "end_shot": shots[-1]["shot_id"],
+            "start_ms": scene_start,
+            "end_ms": shots[-1]["end_ms"],
+            "scene_score": 0,
+        }
+    )
 
     output = {
-        "video_id": "SceneSeg_Test1", "shot_count": len(shots),
+        "video_id": "SceneSeg_Test1",
+        "shot_count": len(shots),
         "mode": args.mode,
         "weights": {"location": W[0], "character": W[1], "plot": W[2]},
-        "threshold": THRESHOLD, "min_scene_ms": MIN_SCENE_MS,
-        "merged_scores": merged, "final_scenes": final_scenes,
+        "threshold": THRESHOLD,
+        "min_scene_ms": MIN_SCENE_MS,
+        "merged_scores": merged,
+        "final_scenes": final_scenes,
     }
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
@@ -105,9 +133,11 @@ def main():
     for s in final_scenes:
         m1, s1 = divmod(s["start_ms"], 60000)
         m2, s2 = divmod(s["end_ms"], 60000)
-        print(f"  {s['start_shot']}→{s['end_shot']}: "
-              f"[{int(m1)}:{s1/1000:04.1f}-{int(m2)}:{s2/1000:04.1f}] "
-              f"({int((s['end_ms'] - s['start_ms']) / 1000)}s) score={s['scene_score']}")
+        print(
+            f"  {s['start_shot']}→{s['end_shot']}: "
+            f"[{int(m1)}:{s1 / 1000:04.1f}-{int(m2)}:{s2 / 1000:04.1f}] "
+            f"({int((s['end_ms'] - s['start_ms']) / 1000)}s) score={s['scene_score']}"
+        )
 
 
 if __name__ == "__main__":

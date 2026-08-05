@@ -9,7 +9,6 @@ Files > 15min are auto-chunked and transcribed in parallel.
 from __future__ import annotations
 
 import base64
-import os
 import subprocess
 import tempfile
 import time
@@ -97,9 +96,17 @@ class DoubaoASRProvider:
 
             # Split with ffmpeg
             cmd = [
-                "ffmpeg", "-y", "-i", audio_path,
-                "-f", "segment", "-segment_time", str(MAX_CHUNK_SECONDS),
-                "-c", "copy", str(chunk_dir / "chunk_%03d.wav"),
+                "ffmpeg",
+                "-y",
+                "-i",
+                audio_path,
+                "-f",
+                "segment",
+                "-segment_time",
+                str(MAX_CHUNK_SECONDS),
+                "-c",
+                "copy",
+                str(chunk_dir / "chunk_%03d.wav"),
             ]
             subprocess.run(cmd, capture_output=True, check=True, timeout=120)
             chunks = sorted(chunk_dir.glob("chunk_*.wav"))
@@ -109,8 +116,7 @@ class DoubaoASRProvider:
             results = {}
             with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
                 futures = {
-                    pool.submit(self._transcribe_single, str(c)): i
-                    for i, c in enumerate(chunks)
+                    pool.submit(self._transcribe_single, str(c)): i for i, c in enumerate(chunks)
                 }
                 for future in as_completed(futures):
                     idx = futures[future]
@@ -128,10 +134,14 @@ class DoubaoASRProvider:
         finally:
             # Cleanup temp chunks
             for f in chunk_dir.glob("*.wav"):
-                try: f.unlink()
-                except OSError: pass
-            try: chunk_dir.rmdir()
-            except OSError: pass
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
+            try:
+                chunk_dir.rmdir()
+            except OSError:
+                pass
 
     def _merge_results(self, results: dict, n_chunks: int) -> dict:
         """Merge chunked ASR results with adjusted timestamps."""
@@ -170,19 +180,23 @@ class DoubaoASRProvider:
                     all_utterances.append(u)
             elif text:
                 # No utterances — create a segment from flat text
-                all_utterances.append({
-                    "text": text,
-                    "start_time": offset_ms,
-                    "end_time": offset_ms + MAX_CHUNK_SECONDS * 1000,
-                    "confidence": 0.0,
-                })
+                all_utterances.append(
+                    {
+                        "text": text,
+                        "start_time": offset_ms,
+                        "end_time": offset_ms + MAX_CHUNK_SECONDS * 1000,
+                        "confidence": 0.0,
+                    }
+                )
 
         return {
-            "result": [{
-                "text": " ".join(all_texts),
-                "utterances": all_utterances,
-                "language": language,
-            }],
+            "result": [
+                {
+                    "text": " ".join(all_texts),
+                    "utterances": all_utterances,
+                    "language": language,
+                }
+            ],
             "_elapsed_ms": total_elapsed,
             "_chunked": True,
             "_n_chunks": n_chunks,
@@ -200,9 +214,10 @@ def _audio_duration_seconds(path: str) -> float | None:
     """Get audio duration in seconds via ffprobe."""
     try:
         result = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
-             "-of", "csv=p=0", path],
-            capture_output=True, text=True, timeout=10,
+            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return float(result.stdout.strip()) if result.stdout.strip() else None
     except Exception:

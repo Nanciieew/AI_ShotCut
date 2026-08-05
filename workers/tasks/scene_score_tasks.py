@@ -29,7 +29,7 @@ from workers.celery_app import app
 def _resolve_uri(uri: str, storage_root: str) -> str:
     prefix = "storage://"
     if uri.startswith(prefix):
-        return os.path.join(storage_root, uri[len(prefix):])
+        return os.path.join(storage_root, uri[len(prefix) :])
     return uri
 
 
@@ -61,8 +61,10 @@ def score_vlm(self, task_id: str, video_id: str) -> dict:
 
         # Find shots artifact from same task
         shots_art = artifact_repo.get_artifact_for_task(
-            task_id=task_id, video_id=video_id,
-            artifact_type="shots", model_name="omnishotcut",
+            task_id=task_id,
+            video_id=video_id,
+            artifact_type="shots",
+            model_name="omnishotcut",
         )
         if shots_art is None:
             clear_task_context()
@@ -73,9 +75,14 @@ def score_vlm(self, task_id: str, video_id: str) -> dict:
 
         run_id = uuid.uuid4().hex[:16]
         model_run = ModelRun(
-            run_id=run_id, task_id=task_id, video_id=video_id,
-            model_name=model_name, model_version="0.1.0",
-            schema_version="1.0", status="RUNNING", device="cpu",
+            run_id=run_id,
+            task_id=task_id,
+            video_id=video_id,
+            model_name=model_name,
+            model_version="0.1.0",
+            schema_version="1.0",
+            status="RUNNING",
+            device="cpu",
             started_at=datetime.now(timezone.utc),
         )
         session.add(model_run)
@@ -109,18 +116,23 @@ def score_vlm(self, task_id: str, video_id: str) -> dict:
 
     try:
         t0 = time.monotonic()
-        result = adapter.predict({
-            "task_id": task_id, "video_id": video_id,
-            "model": {"name": model_name, "version": "0.1.0"},
-            "input": {"shots_uri": shots_art.uri, "keyframes_dir": kf_dir},
-            "parameters": {},  # batch_size auto-detected from image resolution
-        })
+        result = adapter.predict(
+            {
+                "task_id": task_id,
+                "video_id": video_id,
+                "model": {"name": model_name, "version": "0.1.0"},
+                "input": {"shots_uri": shots_art.uri, "keyframes_dir": kf_dir},
+                "parameters": {},  # batch_size auto-detected from image resolution
+            }
+        )
         runtime_ms = int((time.monotonic() - t0) * 1000)
     except Exception as e:
         with get_sync_session() as session:
             TaskRepository(session).set_error(task_id, "VLM_INFERENCE_FAILED", str(e))
             mr = session.get(ModelRun, run_id)
-            if mr: mr.status = "FAILED"; mr.finished_at = datetime.now(timezone.utc)
+            if mr:
+                mr.status = "FAILED"
+                mr.finished_at = datetime.now(timezone.utc)
             session.commit()
         clear_task_context()
         raise NonRetryableTaskError(f"[VLM_INFERENCE_FAILED] {e}")
@@ -128,7 +140,9 @@ def score_vlm(self, task_id: str, video_id: str) -> dict:
     if result.get("status") != "SUCCEEDED":
         err = result.get("error", {})
         with get_sync_session() as session:
-            TaskRepository(session).set_error(task_id, err.get("code", "FAILED"), err.get("message", ""))
+            TaskRepository(session).set_error(
+                task_id, err.get("code", "FAILED"), err.get("message", "")
+            )
             session.commit()
         clear_task_context()
         raise NonRetryableTaskError(f"[{err.get('code', 'FAILED')}] {err.get('message', '')}")
@@ -145,24 +159,37 @@ def score_vlm(self, task_id: str, video_id: str) -> dict:
         relative_path=scores_rel,
         data={"video_id": video_id, "scores": scores},
         artifact_type="location_character_scores",
-        artifact_id=f"{run_id}_vlm", video_id=video_id, run_id=run_id, producer=producer,
+        artifact_id=f"{run_id}_vlm",
+        video_id=video_id,
+        run_id=run_id,
+        producer=producer,
     )
 
     with get_sync_session() as session:
         ArtifactRepository(session).create(
-            artifact_id=f"{run_id}_vlm", video_id=video_id, run_id=run_id,
+            artifact_id=f"{run_id}_vlm",
+            video_id=video_id,
+            run_id=run_id,
             artifact_type="location_character_scores",
-            uri=f"storage://{scores_rel}", format="json", sha256=manifest.output.sha256,
+            uri=f"storage://{scores_rel}",
+            format="json",
+            sha256=manifest.output.sha256,
         )
         mr = session.get(ModelRun, run_id)
-        if mr: mr.status = "SUCCEEDED"; mr.runtime_ms = runtime_ms; mr.finished_at = datetime.now(timezone.utc)
+        if mr:
+            mr.status = "SUCCEEDED"
+            mr.runtime_ms = runtime_ms
+            mr.finished_at = datetime.now(timezone.utc)
         TaskRepository(session).update_progress(task_id, 65, stage="score_vlm")
         session.commit()
 
     clear_task_context()
     return {
-        "task_id": task_id, "video_id": video_id, "run_id": run_id,
-        "status": "SUCCEEDED", "stage": "score_vlm",
+        "task_id": task_id,
+        "video_id": video_id,
+        "run_id": run_id,
+        "status": "SUCCEEDED",
+        "stage": "score_vlm",
         "artifacts": {"vlm_scores": f"storage://{scores_rel}"},
         "metrics": {"score_count": len(scores), "runtime_ms": runtime_ms},
     }
@@ -190,8 +217,10 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
 
         # Find subtitles artifact
         sub_art = artifact_repo.get_artifact_for_task(
-            task_id=task_id, video_id=video_id,
-            artifact_type="subtitle_segments", model_name="whisper",
+            task_id=task_id,
+            video_id=video_id,
+            artifact_type="subtitle_segments",
+            model_name="whisper",
         )
         if sub_art is None:
             clear_task_context()
@@ -199,8 +228,10 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
 
         # Find shots artifact
         shots_art = artifact_repo.get_artifact_for_task(
-            task_id=task_id, video_id=video_id,
-            artifact_type="shots", model_name="omnishotcut",
+            task_id=task_id,
+            video_id=video_id,
+            artifact_type="shots",
+            model_name="omnishotcut",
         )
         if shots_art is None:
             clear_task_context()
@@ -210,9 +241,14 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
 
         run_id = uuid.uuid4().hex[:16]
         model_run = ModelRun(
-            run_id=run_id, task_id=task_id, video_id=video_id,
-            model_name=model_name, model_version="1.0.0",
-            schema_version="1.0", status="RUNNING", device="cpu",
+            run_id=run_id,
+            task_id=task_id,
+            video_id=video_id,
+            model_name=model_name,
+            model_version="1.0.0",
+            schema_version="1.0",
+            status="RUNNING",
+            device="cpu",
             started_at=datetime.now(timezone.utc),
         )
         session.add(model_run)
@@ -227,7 +263,10 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
         shots = json.load(f).get("shots", [])
 
     # Build prompt
-    sub_lines = [f"[{int(s['start_ms']//60000):02d}:{(s['start_ms']%60000)/1000:05.2f}] {s['text'][:80]}" for s in subtitles]
+    sub_lines = [
+        f"[{int(s['start_ms'] // 60000):02d}:{(s['start_ms'] % 60000) / 1000:05.2f}] {s['text'][:80]}"
+        for s in subtitles
+    ]
     sub_timeline = "\n".join(sub_lines)
 
     prompt = f"""你是电影情节分析助手。以下是电影字幕时间线。
@@ -243,7 +282,7 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
 只输出JSON：
 {{"events":[{{"label":"...","level":"major","time_range":{{"start_ms":0,"end_ms":600000}}}}]}}
 
---- 字幕时间线（{len(subtitles)}句，约{subtitles[-1]['end_ms']//60000}分钟）---
+--- 字幕时间线（{len(subtitles)}句，约{subtitles[-1]["end_ms"] // 60000}分钟）---
 {sub_timeline}"""
 
     try:
@@ -252,6 +291,7 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
         api_key = os.getenv("QWEN_VL_API_KEY", "")
         if not api_key:
             from core.config import get_settings
+
             api_key = get_settings().qwen_vl_api_key
         provider = DeepSeekLLMProvider(api_key=api_key)
 
@@ -274,6 +314,7 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
             events = json.loads(raw_text).get("events", [])
         except json.JSONDecodeError:
             import re
+
             m = re.search(r'\{[\s\S]*"events"[\s\S]*\}', raw_text)
             events = json.loads(m.group()).get("events", []) if m else []
 
@@ -290,7 +331,8 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
                 continue
             if abs(boundary_ms - evt_start) < 500:
                 score = LEVEL_SCORE.get(evt.get("level", "minor"), 30)
-                if score > max_score: max_score = score
+                if score > max_score:
+                    max_score = score
         if max_score > 0:
             plot_scores.append({"shot_id": shot["shot_id"], "plot_change": max_score})
 
@@ -298,7 +340,8 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
     project_id = "default"
     with get_sync_session() as session:
         video = VideoRepository(session).get(video_id)
-        if video: project_id = video.project_id or "default"
+        if video:
+            project_id = video.project_id or "default"
 
     artifact_base = f"projects/{project_id}/videos/{video_id}/artifacts/deepseek_plot/1.0.0"
     scores_rel = f"{artifact_base}/plot_scores.json"
@@ -308,27 +351,43 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
         relative_path=scores_rel,
         data={"video_id": video_id, "events": events, "plot_scores": plot_scores},
         artifact_type="plot_scores",
-        artifact_id=f"{run_id}_plot", video_id=video_id, run_id=run_id, producer=producer,
+        artifact_id=f"{run_id}_plot",
+        video_id=video_id,
+        run_id=run_id,
+        producer=producer,
     )
 
     with get_sync_session() as session:
         ArtifactRepository(session).create(
-            artifact_id=f"{run_id}_plot", video_id=video_id, run_id=run_id,
-            artifact_type="plot_scores", uri=f"storage://{scores_rel}",
-            format="json", sha256=manifest.output.sha256,
+            artifact_id=f"{run_id}_plot",
+            video_id=video_id,
+            run_id=run_id,
+            artifact_type="plot_scores",
+            uri=f"storage://{scores_rel}",
+            format="json",
+            sha256=manifest.output.sha256,
         )
         mr = session.get(ModelRun, run_id)
-        if mr: mr.status = "SUCCEEDED"; mr.runtime_ms = runtime_ms; mr.finished_at = datetime.now(timezone.utc)
+        if mr:
+            mr.status = "SUCCEEDED"
+            mr.runtime_ms = runtime_ms
+            mr.finished_at = datetime.now(timezone.utc)
         TaskRepository(session).update_progress(task_id, 80, stage="score_plot")
         session.commit()
 
     clear_task_context()
     return {
-        "task_id": task_id, "video_id": video_id, "run_id": run_id,
-        "status": "SUCCEEDED", "stage": "score_plot",
+        "task_id": task_id,
+        "video_id": video_id,
+        "run_id": run_id,
+        "status": "SUCCEEDED",
+        "stage": "score_plot",
         "artifacts": {"plot_scores": f"storage://{scores_rel}"},
-        "metrics": {"event_count": len(events), "plot_score_count": len(plot_scores),
-                    "runtime_ms": runtime_ms},
+        "metrics": {
+            "event_count": len(events),
+            "plot_score_count": len(plot_scores),
+            "runtime_ms": runtime_ms,
+        },
     }
 
 
@@ -338,11 +397,15 @@ def score_plot(self, task_id: str, video_id: str) -> dict:
 
 
 @app.task(name="scene.merge_scores", bind=True, max_retries=1)
-def merge_scores(self, task_id: str, video_id: str,
-                 mode: str = "weighted",
-                 location_weight: int = 35,
-                 character_weight: int = 35,
-                 plot_weight: int = 30) -> dict:
+def merge_scores(
+    self,
+    task_id: str,
+    video_id: str,
+    mode: str = "weighted",
+    location_weight: int = 35,
+    character_weight: int = 35,
+    plot_weight: int = 30,
+) -> dict:
     """Merge VLM + Plot scores into scene_score, greedily select final scenes.
 
     Reads location_character_scores + plot_scores + shots.json.
@@ -387,18 +450,28 @@ def merge_scores(self, task_id: str, video_id: str,
 
         # Resolve artifacts
         shots_art = artifact_repo.get_artifact_for_task(task_id, video_id, "shots", "omnishotcut")
-        vlm_art = artifact_repo.get_artifact_for_task(task_id, video_id, "location_character_scores", "vlm_scene_boundary")
-        plot_art = artifact_repo.get_artifact_for_task(task_id, video_id, "plot_scores", "deepseek_plot")
+        vlm_art = artifact_repo.get_artifact_for_task(
+            task_id, video_id, "location_character_scores", "vlm_scene_boundary"
+        )
+        plot_art = artifact_repo.get_artifact_for_task(
+            task_id, video_id, "plot_scores", "deepseek_plot"
+        )
 
         if not shots_art:
-            clear_task_context(); raise NonRetryableTaskError("[SHOTS_NOT_FOUND]")
+            clear_task_context()
+            raise NonRetryableTaskError("[SHOTS_NOT_FOUND]")
 
         task_repo.update_progress(task_id, 85, stage="merge_scores")
         run_id = uuid.uuid4().hex[:16]
         model_run = ModelRun(
-            run_id=run_id, task_id=task_id, video_id=video_id,
-            model_name=model_name, model_version="1.0.0",
-            schema_version="1.0", status="RUNNING", device="cpu",
+            run_id=run_id,
+            task_id=task_id,
+            video_id=video_id,
+            model_name=model_name,
+            model_version="1.0.0",
+            schema_version="1.0",
+            status="RUNNING",
+            device="cpu",
             started_at=datetime.now(timezone.utc),
         )
         session.add(model_run)
@@ -435,60 +508,96 @@ def merge_scores(self, task_id: str, video_id: str,
         plot = p.get("plot_change", p.get("plot_change_score", 0))
         scene_score = round(W[0] * loc + W[1] * char + W[2] * plot)
 
-        merged.append({"shot_id": sid, "location_change": loc,
-                       "character_group_change": char, "plot_change_score": plot,
-                       "scene_score": scene_score})
+        merged.append(
+            {
+                "shot_id": sid,
+                "location_change": loc,
+                "character_group_change": char,
+                "plot_change_score": plot,
+                "scene_score": scene_score,
+            }
+        )
 
         dur = shot["end_ms"] - scene_start
         if scene_score >= THRESHOLD and dur >= MIN_SCENE_MS:
-            final_scenes.append({"start_shot": scene_start_shot, "end_shot": sid,
-                                 "start_ms": scene_start, "end_ms": shot["end_ms"],
-                                 "scene_score": scene_score})
+            final_scenes.append(
+                {
+                    "start_shot": scene_start_shot,
+                    "end_shot": sid,
+                    "start_ms": scene_start,
+                    "end_ms": shot["end_ms"],
+                    "scene_score": scene_score,
+                }
+            )
             scene_start = shots[i + 1]["start_ms"]
             scene_start_shot = shots[i + 1]["shot_id"]
 
-    final_scenes.append({"start_shot": scene_start_shot, "end_shot": shots[-1]["shot_id"],
-                         "start_ms": scene_start, "end_ms": shots[-1]["end_ms"],
-                         "scene_score": 0})
+    final_scenes.append(
+        {
+            "start_shot": scene_start_shot,
+            "end_shot": shots[-1]["shot_id"],
+            "start_ms": scene_start,
+            "end_ms": shots[-1]["end_ms"],
+            "scene_score": 0,
+        }
+    )
 
     # Save
     project_id = "default"
     with get_sync_session() as session:
         v = VideoRepository(session).get(video_id)
-        if v: project_id = v.project_id or "default"
+        if v:
+            project_id = v.project_id or "default"
 
     artifact_base = f"projects/{project_id}/videos/{video_id}/artifacts/{model_name}/1.0.0"
     result_rel = f"{artifact_base}/final_result.json"
     writer = ArtifactWriter(storage_root)
     producer = ArtifactProducer(model_name=model_name, model_version="1.0.0")
     out = {
-        "video_id": video_id, "shot_count": n, "boundary_count": n - 1,
+        "video_id": video_id,
+        "shot_count": n,
+        "boundary_count": n - 1,
         "weights": {"location": W[0], "character": W[1], "plot": W[2]},
         "mode": mode,
-        "threshold": THRESHOLD, "min_scene_ms": MIN_SCENE_MS,
-        "merged_scores": merged, "final_scenes": final_scenes,
+        "threshold": THRESHOLD,
+        "min_scene_ms": MIN_SCENE_MS,
+        "merged_scores": merged,
+        "final_scenes": final_scenes,
     }
     manifest = writer.write_json_artifact(
-        relative_path=result_rel, data=out,
+        relative_path=result_rel,
+        data=out,
         artifact_type="final_result",
-        artifact_id=f"{run_id}_result", video_id=video_id, run_id=run_id, producer=producer,
+        artifact_id=f"{run_id}_result",
+        video_id=video_id,
+        run_id=run_id,
+        producer=producer,
     )
 
     with get_sync_session() as session:
         ArtifactRepository(session).create(
-            artifact_id=f"{run_id}_result", video_id=video_id, run_id=run_id,
-            artifact_type="final_result", uri=f"storage://{result_rel}",
-            format="json", sha256=manifest.output.sha256,
+            artifact_id=f"{run_id}_result",
+            video_id=video_id,
+            run_id=run_id,
+            artifact_type="final_result",
+            uri=f"storage://{result_rel}",
+            format="json",
+            sha256=manifest.output.sha256,
         )
         mr = session.get(ModelRun, run_id)
-        if mr: mr.status = "SUCCEEDED"; mr.finished_at = datetime.now(timezone.utc)
+        if mr:
+            mr.status = "SUCCEEDED"
+            mr.finished_at = datetime.now(timezone.utc)
         TaskRepository(session).update_progress(task_id, 95, stage="merge_scores")
         session.commit()
 
     clear_task_context()
     return {
-        "task_id": task_id, "video_id": video_id, "run_id": run_id,
-        "status": "SUCCEEDED", "stage": "merge_scores",
+        "task_id": task_id,
+        "video_id": video_id,
+        "run_id": run_id,
+        "status": "SUCCEEDED",
+        "stage": "merge_scores",
         "artifacts": {"final_result": f"storage://{result_rel}"},
         "metrics": {"scene_count": len(final_scenes)},
     }

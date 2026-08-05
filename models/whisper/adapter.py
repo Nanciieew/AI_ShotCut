@@ -1,4 +1,4 @@
-﻿"""Whisper/Doubao adapter — speech-to-text via Doubao (豆包) ASR API.
+"""Whisper/Doubao adapter — speech-to-text via Doubao (豆包) ASR API.
 
 Replaces local Whisper model with Doubao cloud API.
 Follows IO_Rule §4.2 contract.
@@ -70,6 +70,7 @@ class WhisperAdapter(BaseModelAdapter):
         audio_uri = audio_input.get("audio_uri")
         video_uri = audio_input.get("video_uri")
 
+        audio_path: str | None = None
         if audio_uri:
             audio_path = self._resolve_uri(audio_uri)
         elif video_uri:
@@ -79,10 +80,13 @@ class WhisperAdapter(BaseModelAdapter):
         else:
             return self._error("NO_AUDIO_INPUT", "Provide audio_uri or video_uri.")
 
+        assert audio_path is not None  # mypy guard
         if not os.path.exists(audio_path):
             return self._error("AUDIO_NOT_FOUND", f"Audio file not found: {audio_path}")
 
         # Transcribe
+        if self._provider is None:
+            return self._error("MODEL_NOT_LOADED", "Provider not initialized")
         try:
             t0 = time.monotonic()
             result = self._provider.transcribe(
@@ -108,17 +112,8 @@ class WhisperAdapter(BaseModelAdapter):
             },
         }
 
-    def health_check(self) -> dict:
-        return {
-            "model": "doubao-asr",
-            "version": self.version,
-            "loaded": self._loaded,
-            "status": (
-                "healthy"
-                if self._provider and self._provider.health_check()
-                else "not_loaded"
-            ),
-        }
+    def health_check(self) -> bool:
+        return self._provider is not None and self._provider.health_check()
 
     # ------------------------------------------------------------------
     # Internal
@@ -157,8 +152,17 @@ class WhisperAdapter(BaseModelAdapter):
         if os.path.exists(audio_path):
             return audio_path
         cmd = [
-            "ffmpeg", "-y", "-i", video_path,
-            "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+            "ffmpeg",
+            "-y",
+            "-i",
+            video_path,
+            "-vn",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
             audio_path,
         ]
         try:
@@ -167,9 +171,7 @@ class WhisperAdapter(BaseModelAdapter):
             return None
         return audio_path
 
-    def _build_segments(
-        self, api_result: dict, video_id: str, language: str | None
-    ) -> list[dict]:
+    def _build_segments(self, api_result: dict, video_id: str, language: str | None) -> list[dict]:
         """Convert API response to IO_Rule subtitle_segments.
 
         Handles both native ByteDance format (result[0].utterances)
@@ -185,20 +187,56 @@ class WhisperAdapter(BaseModelAdapter):
             if utterances:
                 segments: list[dict] = []
                 for i, u in enumerate(utterances):
-                    segments.append({
-                        "subtitle_id": f"subtitle_{i + 1:06d}",
-                        "video_id": video_id,
-                        "start_ms": int(u.get("start_time", 0)),
-                        "end_ms": int(u.get("end_time", 0)),
-                        "text": u.get("text", "").strip(),
-                        "language": detected_lang,
-                        "confidence": round(u.get("confidence", 0.0), 4),
-                    })
+                    segments.append(
+                        {
+                            "subtitle_id": f"subtitle_{i + 1:06d}",
+                            "video_id": video_id,
+                            "start_ms": int(u.get("start_time", 0)),
+                            "end_ms": int(u.get("end_time", 0)),
+                            "text": u.get("text", "").strip(),
+                            "language": detected_lang,
+                            "confidence": round(u.get("confidence", 0.0), 4),
+                        }
+                    )
                 return segments
             # No utterances — use full text as single segment
             text = r0.get("text", "")
             if text.strip():
-                return [{
+                return [
+                    {
+                        "subtitle_id": "subtitle_000001",
+                        "video_id": video_id,
+                        "start_ms": 0,
+                        "end_ms": 0,
+                        "text": text.strip(),
+                        "language": detected_lang,
+                        "confidence": 0.0,
+                    }
+                ]
+
+        # --- OpenAI-compatible format: text + segments ---
+        raw_segments = api_result.get("segments", [])
+        if raw_segments:
+            segments = []
+            for i, seg in enumerate(raw_segments):
+                segments.append(
+                    {
+                        "subtitle_id": f"subtitle_{i + 1:06d}",
+                        "video_id": video_id,
+                        "start_ms": int(round(seg.get("start", seg.get("begin", 0)) * 1000)),
+                        "end_ms": int(round(seg.get("end", 0) * 1000)),
+                        "text": seg.get("text", "").strip(),
+                        "language": detected_lang,
+                        "confidence": round(seg.get("confidence", 0.0), 4),
+                    }
+                )
+            return segments
+
+        # --- Fallback: single segment from top-level text ---
+        text = api_result.get("text", "")
+        if text.strip():
+            return [
+                {
                     "subtitle_id": "subtitle_000001",
                     "video_id": video_id,
                     "start_ms": 0,
@@ -206,36 +244,8 @@ class WhisperAdapter(BaseModelAdapter):
                     "text": text.strip(),
                     "language": detected_lang,
                     "confidence": 0.0,
-                }]
-
-        # --- OpenAI-compatible format: text + segments ---
-        raw_segments = api_result.get("segments", [])
-        if raw_segments:
-            segments = []
-            for i, seg in enumerate(raw_segments):
-                segments.append({
-                    "subtitle_id": f"subtitle_{i + 1:06d}",
-                    "video_id": video_id,
-                    "start_ms": int(round(seg.get("start", seg.get("begin", 0)) * 1000)),
-                    "end_ms": int(round(seg.get("end", 0) * 1000)),
-                    "text": seg.get("text", "").strip(),
-                    "language": detected_lang,
-                    "confidence": round(seg.get("confidence", 0.0), 4),
-                })
-            return segments
-
-        # --- Fallback: single segment from top-level text ---
-        text = api_result.get("text", "")
-        if text.strip():
-            return [{
-                "subtitle_id": "subtitle_000001",
-                "video_id": video_id,
-                "start_ms": 0,
-                "end_ms": 0,
-                "text": text.strip(),
-                "language": detected_lang,
-                "confidence": 0.0,
-            }]
+                }
+            ]
         return []
 
     @staticmethod
