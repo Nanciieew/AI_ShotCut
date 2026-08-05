@@ -97,59 +97,226 @@ async def submit_full_pipeline(
         )
         session.commit()
 
-    # Build and submit Celery chain via orchestration layer
-    try:
-        canvas = build_omnishotcut_canvas(
-            task_id=task_id,
-            video_id=vid,
-            extract_keyframes=extract_keyframes,
-            scene_analysis=scene_analysis,
-            shot_model=shot_model,
-            score_mode=score_mode,
-            location_weight=location_weight,
-            character_weight=character_weight,
-            plot_weight=plot_weight,
-            cut_intensity=cut_intensity,
-            min_distance_s=min_distance_s,
-        )
-        result = canvas.apply_async()
-        celery_task_id = result.id
+    # Start pipeline in background thread (no Redis/Celery dependency)
+    import threading
 
-        # Update celery_task_id
+    def run_pipeline():
+        """Run the full pipeline synchronously in a background thread."""
+        import sys, os, json, time, subprocess, base64, uuid, re
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
+
+        storage_root = os.getenv("STORAGE_ROOT", "./data")
+        steps_msg = "normalize_video → detect_shots → extract_keyframes"
+        if scene_analysis:
+            steps_msg += " → transcribe → vlm+plot → merge"
+        steps_msg += " → complete"
+
         with get_sync_session() as session:
             task_repo = TaskRepository(session)
-            task_repo.set_celery_id(task_id, celery_task_id)
+            task_repo.update_status(task_id, "RUNNING")
+            task_repo.update_progress(task_id, 5, stage="normalize_video")
             session.commit()
-    except Exception as e:
-        with get_sync_session() as session:
-            task_repo = TaskRepository(session)
-            task_repo.set_error(task_id, "CELERY_DISPATCH_FAILED", str(e))
-            session.commit()
-        return {
-            "task_id": task_id,
-            "video_id": vid,
-            "project_id": proj_id,
-            "status": "FAILED",
-            "stage": "dispatch",
-            "error": {"code": "CELERY_DISPATCH_FAILED", "message": str(e)},
-        }
 
-    steps_msg = "normalize_video → detect_shots"
-    if extract_keyframes:
-        steps_msg += " → extract_keyframes"
-    if scene_analysis:
-        steps_msg += " → transcribe → vlm + plot → merge"
-    steps_msg += " → pipeline_complete"
+        try:
+            # Step 1: Normalize
+            from core.media.ffprobe import probe_video, run_ffprobe
+            from core.media.ffmpeg import build_normalize_command, run_ffmpeg, get_ffmpeg_version
+            from core.media.normalization import validate_normalization
+            from core.media.schemas import NormalizationConfig
+
+            video_path_full = os.path.join(storage_root, source_uri[len("storage://"):]) if source_uri.startswith("storage://") else source_uri
+            artifact_base = f"projects/{proj_id}/videos/{vid}/artifacts"
+            norm_dir = os.path.join(storage_root, artifact_base, "video_normalization", "1.0.0")
+            os.makedirs(norm_dir, exist_ok=True)
+            normalized_path = os.path.join(norm_dir, "normalized.mp4")
+
+            with get_sync_session() as session:
+                task_repo = TaskRepository(session)
+                task_repo.update_progress(task_id, 10, stage="normalize_video"); session.commit()
+
+            probe_before = run_ffprobe(video_path_full)
+            cfg = NormalizationConfig()
+            cmd = build_normalize_command(input_path=video_path_full, output_path=normalized_path, probe=probe_before, config=cfg)
+            run_ffmpeg(cmd, timeout=3600, description="normalize")
+            probe_after = run_ffprobe(normalized_path)
+            validate_normalization(probe_before=probe_before, probe_after=probe_after, output_path=normalized_path)
+
+            nrml_uri = f"storage://{artifact_base}/video_normalization/1.0.0/normalized.mp4"
+            with get_sync_session() as session:
+                task_repo = TaskRepository(session)
+                video_repo = VideoRepository(session)
+                video_repo.update_metadata(vid, duration_ms=probe_after.duration_ms, fps_num=probe_after.fps_num, fps_den=probe_after.fps_den, width=probe_after.width, height=probe_after.height, normalized_uri=nrml_uri)
+                task_repo.update_progress(task_id, 30, stage="detect_shots"); session.commit()
+
+            # Step 2: Shot detection
+            from models.ffmpeg_scene.adapter import FFmpegSceneAdapter
+            adapter = FFmpegSceneAdapter()
+            result = adapter.predict({"task_id": task_id, "video_id": vid, "model": {"name": "ffmpeg_scene", "version": "0.1.0"}, "input": {"video_uri": nrml_uri}, "parameters": {"threshold": 0.1}})
+            shots = result.get("metrics", {}).get("shot_count", 0) or len(adapter._last_result.get("shots", []))
+            shot_dir = os.path.join(storage_root, artifact_base, "omnishotcut", "0.1.0")
+            os.makedirs(shot_dir, exist_ok=True)
+            with open(os.path.join(shot_dir, "shots.json"), "w") as f: json.dump(adapter._last_result, f)
+
+            with get_sync_session() as session:
+                task_repo = TaskRepository(session)
+                task_repo.update_progress(task_id, 40, stage="extract_keyframes"); session.commit()
+
+            # Step 3: Keyframes
+            from core.media.keyframes import compute_keyframe_targets, extract_keyframes
+            targets = compute_keyframe_targets(adapter._last_result.get("shots", []), probe_after.fps_num, probe_after.fps_den)
+            kf_dir = os.path.join(storage_root, artifact_base, "shot_keyframes", "1.0.0")
+            os.makedirs(kf_dir, exist_ok=True)
+            extract_keyframes(normalized_path, targets, Path(kf_dir), max_long_side=320, quality=85)
+
+            # Also extract proxy for VLM
+            kf_proxy = os.path.join(storage_root, artifact_base, "shot_keyframes_proxy", "1.0.0")
+            os.makedirs(kf_proxy, exist_ok=True)
+            extract_keyframes(normalized_path, targets, Path(kf_proxy), max_long_side=320, quality=85)
+
+            if not scene_analysis:
+                with get_sync_session() as session:
+                    task_repo = TaskRepository(session)
+                    task_repo.update_status(task_id, "SUCCEEDED")
+                    task_repo.update_progress(task_id, 100, stage="complete"); session.commit()
+                return
+
+            # Step 4: Subtitle
+            with get_sync_session() as session:
+                task_repo = TaskRepository(session)
+                task_repo.update_progress(task_id, 50, stage="transcribe"); session.commit()
+
+            from models.whisper.adapter import WhisperAdapter
+            wa = WhisperAdapter(); wa.load()
+            sub_result = wa.predict({"task_id": task_id, "video_id": vid, "model": {"name": "whisper", "version": "1.0.0"}, "input": {"video_uri": nrml_uri}, "parameters": {}})
+            segs = sub_result.get("artifacts", {}).get("subtitle_segments", [])
+
+            # Step 5: VLM Scoring
+            with get_sync_session() as session:
+                task_repo = TaskRepository(session)
+                task_repo.update_progress(task_id, 60, stage="score_vlm"); session.commit()
+
+            shots_list = adapter._last_result.get("shots", [])
+            vlm_scores = []
+            if len(shots_list) >= 2:
+                from models.vlm_boundary.adapter import VLMSceneBoundaryAdapter
+                va = VLMSceneBoundaryAdapter(); va.load()
+                v_result = va.predict({"task_id": task_id, "video_id": vid, "model": {"name": "vlm_scene_boundary", "version": "0.1.0"}, "input": {"shots_uri": f"storage://{artifact_base}/omnishotcut/0.1.0/shots.json", "keyframes_dir": kf_proxy}, "parameters": {}})
+                vlm_scores = va._last_result.get("scores", [])
+
+            # Step 6: DeepSeek Plot
+            with get_sync_session() as session:
+                task_repo = TaskRepository(session)
+                task_repo.update_progress(task_id, 75, stage="score_plot"); session.commit()
+
+            plot_scores = []
+            if segs:
+                sub_lines = [f"[{int(s['start_ms']//60000):02d}:{(s['start_ms']%60000)/1000:05.2f}] {s['text'][:80]}" for s in segs]
+                from models.vlm_boundary.providers.deepseek_llm import DeepSeekLLMProvider
+                api_key = os.getenv("QWEN_VL_API_KEY", "")
+                if not api_key:
+                    try:
+                        from core.config import get_settings; api_key = get_settings().qwen_vl_api_key
+                    except Exception: pass
+                dp = DeepSeekLLMProvider(api_key=api_key) if api_key else None
+                if dp:
+                    dprompt = f"你是电影情节分析助手。以下是电影字幕时间线。请规划叙事事件（大/中/小三层）。大事件(major)：类似剧本的'幕'。中事件(medium)：大事件内的阶段。小事件(minor)：中事件内的节拍。每个事件输出label,level,time_range(起止ms)。只输出JSON：{{\"events\":[{{\"label\":\"...\",\"level\":\"major\",\"time_range\":{{\"start_ms\":0,\"end_ms\":600000}}}}]}}\n---\n" + "\n".join(sub_lines)
+                    dp_result = dp.send([{"role": "user", "content": dprompt}], max_tokens=4096, timeout=600)
+                    raw_d = dp_result.get("data", {})
+                    raw_txt = raw_d.get("raw", str(raw_d))
+                    events = raw_d.get("events", [])
+                    if not events:
+                        try: events = json.loads(raw_txt).get("events", [])
+                        except: pass
+                    LEVEL = {"major": 100, "medium": 60, "minor": 30}
+                    for shot in shots_list[:-1]:
+                        bms = shot["end_ms"]; mx = 0
+                        for evt in events:
+                            tr = evt.get("time_range", {}); es = tr.get("start_ms", 0); ee = tr.get("end_ms", 0)
+                            if es <= bms < ee: continue
+                            if abs(bms - es) < 500:
+                                sc = LEVEL.get(evt.get("level", "minor"), 30)
+                                if sc > mx: mx = sc
+                        if mx > 0: plot_scores.append({"shot_id": shot["shot_id"], "plot_change": mx})
+
+            # Step 7: Merge
+            with get_sync_session() as session:
+                task_repo = TaskRepository(session)
+                task_repo.update_progress(task_id, 85, stage="merge_scores"); session.commit()
+
+            # Compute weights
+            if score_mode == "location_only": W = (1.0, 0.0, 0.0)
+            elif score_mode == "character_only": W = (0.0, 1.0, 0.0)
+            elif score_mode == "plot_only": W = (0.0, 0.0, 1.0)
+            elif score_mode == "custom":
+                total = location_weight + character_weight + plot_weight
+                W = (location_weight/total, character_weight/total, plot_weight/total) if total > 0 else (0.35, 0.35, 0.30)
+            else: W = (0.35, 0.35, 0.30)
+
+            INTENSITY = {"high": 0.06, "medium": 0.04, "low": 0.01}
+            target_count = max(3, int(len(shots_list) * INTENSITY.get(cut_intensity, 0.04)))
+            MIN_DIST = min_distance_s * 1000
+
+            vlm_map = {s["shot_id"]: s for s in vlm_scores}
+            plot_map = {p["shot_id"]: p for p in plot_scores}
+            merged = []
+            for i, shot in enumerate(shots_list[:-1]):
+                sid = shot["shot_id"]
+                q = vlm_map.get(sid, {}); pp = plot_map.get(sid, {})
+                scene_score = round(W[0]*q.get("location_change",0) + W[1]*q.get("character_group_change",0) + W[2]*pp.get("plot_change",0))
+                merged.append({"shot_id": sid, "boundary_index": i, "timestamp_ms": shot["end_ms"], "location_change": q.get("location_change",0), "character_group_change": q.get("character_group_change",0), "plot_change_score": pp.get("plot_change",0), "scene_score": scene_score})
+
+            ranked = sorted(merged, key=lambda b: b["scene_score"], reverse=True)
+            selected = []
+            for b in ranked:
+                if b["scene_score"] == 0: continue
+                if any(abs(b["timestamp_ms"] - s["timestamp_ms"]) < MIN_DIST for s in selected): continue
+                selected.append(b)
+                if len(selected) >= target_count: break
+            selected.sort(key=lambda b: b["timestamp_ms"])
+
+            candidate_boundaries = []
+            for s in selected:
+                m, sec = divmod(s["timestamp_ms"], 60000)
+                candidate_boundaries.append({"shot_id": s["shot_id"], "boundary_index": s["boundary_index"], "timestamp_ms": s["timestamp_ms"], "timestamp_readable": f"{int(m):02d}:{sec/1000:05.2f}", "scene_score": s["scene_score"], "location_change": s["location_change"], "character_group_change": s["character_group_change"], "plot_change_score": s["plot_change_score"]})
+
+            final_scenes = []
+            scene_start, scene_start_shot = shots_list[0]["start_ms"], shots_list[0]["shot_id"]
+            for b in selected:
+                final_scenes.append({"start_shot": scene_start_shot, "end_shot": b["shot_id"], "start_ms": scene_start, "end_ms": b["timestamp_ms"], "scene_score": b["scene_score"]})
+                ni = b["boundary_index"] + 1
+                scene_start = shots_list[ni]["start_ms"] if ni < len(shots_list) else b["timestamp_ms"]
+                scene_start_shot = shots_list[ni]["shot_id"] if ni < len(shots_list) else b["shot_id"]
+            final_scenes.append({"start_shot": scene_start_shot, "end_shot": shots_list[-1]["shot_id"], "start_ms": scene_start, "end_ms": shots_list[-1]["end_ms"], "scene_score": 0})
+
+            # Save results
+            merge_dir = os.path.join(storage_root, artifact_base, "scene_merger", "1.0.0")
+            os.makedirs(merge_dir, exist_ok=True)
+            with open(os.path.join(merge_dir, "final_result.json"), "w") as f:
+                json.dump({"final_scenes": final_scenes, "candidate_boundaries": candidate_boundaries}, f)
+
+            with get_sync_session() as session:
+                task_repo = TaskRepository(session)
+                task_repo.update_status(task_id, "SUCCEEDED")
+                task_repo.update_progress(task_id, 100, stage="complete"); session.commit()
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            with get_sync_session() as session:
+                task_repo = TaskRepository(session)
+                task_repo.set_error(task_id, "PIPELINE_FAILED", str(e)[:500]); session.commit()
+
+    threading.Thread(target=run_pipeline, daemon=True).start()
 
     return {
         "task_id": task_id,
         "video_id": vid,
         "project_id": proj_id,
-        "status": "QUEUED",
+        "status": "RUNNING",
         "stage": "normalize_video",
-        "progress": 0,
-        "celery_task_id": celery_task_id,
-        "message": f"Pipeline submitted: {steps_msg}",
+        "progress": 5,
+        "message": f"Pipeline started: {steps_msg if scene_analysis else 'normalize → detect → keyframes → complete'}",
     }
 
 

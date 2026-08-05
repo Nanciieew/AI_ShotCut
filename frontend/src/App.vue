@@ -88,12 +88,6 @@ async function loadResults() {
   } catch (_) {}
 }
 
-const celeryOk = ref(false)
-async function checkCelery() {
-  try { const r = await fetch('/health/ready'); const d = await r.json()
-    celeryOk.value = d.checks?.celery_broker === true } catch (_) {}
-}
-checkCelery(); setInterval(checkCelery, 15000)
 onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 </script>
 
@@ -102,10 +96,6 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
     <header>
       <h1>AI ShotCut</h1>
       <p class="sub">Intelligent Movie Scene Analysis</p>
-      <div class="status-bar">
-        <span class="dot-status" :class="{on:celeryOk,off:!celeryOk}"></span>
-        Celery {{ celeryOk ? 'Ready' : 'Offline — start worker first' }}
-      </div>
     </header>
 
     <UploadModal v-if="phase === 'idle' || phase === 'uploading'" :phase="phase"

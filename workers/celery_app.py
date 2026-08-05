@@ -17,8 +17,8 @@ def create_celery_app() -> Celery:
     """Create and configure the Celery application instance."""
     global _app
 
-    broker_url = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
-    result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
+    broker_url = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0?protocol=2")
+    result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1?protocol=2")
 
     app = Celery(
         "movie_analysis",
