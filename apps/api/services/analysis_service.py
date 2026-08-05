@@ -23,6 +23,12 @@ async def submit_full_pipeline(
     video_path: str,
     project_id: str | None = None,
     extract_keyframes: bool = False,
+    scene_analysis: bool = False,
+    shot_model: str = "ffmpeg_scene",
+    score_mode: str = "weighted",
+    location_weight: int = 35,
+    character_weight: int = 35,
+    plot_weight: int = 30,
 ) -> dict:
     """Create DB records and submit the analysis pipeline chain.
 
@@ -36,7 +42,16 @@ async def submit_full_pipeline(
         Project identifier (default: "default").
     extract_keyframes : bool
         When True, include the keyframe extraction step after shot detection.
-        Default False.
+    scene_analysis : bool
+        When True, run full scene scoring (VLM + LLM + merge).
+    score_mode : str
+        location_only | character_only | plot_only | custom | weighted
+    location_weight : int
+        Location weight 1-10 (custom mode only).
+    character_weight : int
+        Character weight 1-10 (custom mode only).
+    plot_weight : int
+        Plot weight 1-10 (custom mode only).
 
     Returns
     -------
@@ -82,6 +97,12 @@ async def submit_full_pipeline(
             task_id=task_id,
             video_id=vid,
             extract_keyframes=extract_keyframes,
+            scene_analysis=scene_analysis,
+            shot_model=shot_model,
+            score_mode=score_mode,
+            location_weight=location_weight,
+            character_weight=character_weight,
+            plot_weight=plot_weight,
         )
         result = canvas.apply_async()
         celery_task_id = result.id
@@ -108,6 +129,8 @@ async def submit_full_pipeline(
     steps_msg = "normalize_video → detect_shots"
     if extract_keyframes:
         steps_msg += " → extract_keyframes"
+    if scene_analysis:
+        steps_msg += " → transcribe → vlm + plot → merge"
     steps_msg += " → pipeline_complete"
 
     return {

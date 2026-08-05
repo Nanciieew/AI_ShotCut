@@ -44,19 +44,35 @@ async def start_shot_analysis(
     video_id: str,
     video_path: str = Form(..., description="Path to video file on storage"),
     project_id: str = Form(default="default"),
+    extract_keyframes: bool = Form(default=False),
+    scene_analysis: bool = Form(default=False),
+    shot_model: str = Form(default="ffmpeg_scene"),
+    score_mode: str = Form(default="weighted"),
+    location_weight: int = Form(default=35, ge=1, le=10),
+    character_weight: int = Form(default=35, ge=1, le=10),
+    plot_weight: int = Form(default=30, ge=1, le=10),
     db: AsyncSession = Depends(get_db),
 ):
-    """Start the OmniShotCut shot detection pipeline.
+    """Start video analysis pipeline.
 
     Pipeline: normalize_video → detect_shots
+      → [extract_keyframes + subtitle.transcribe]
+        → [scene.score_vlm + scene.score_plot]
+          → scene.merge_scores → pipeline_complete
 
-    The video must already be staged at the specified storage path.
-    Returns a task_id for tracking progress via GET /api/v1/tasks/{task_id}.
+    Set scene_analysis=True to enable full scene scoring.
+    score_mode: location_only | character_only | plot_only | custom | weighted
     """
     result = await submit_full_pipeline(
         db=db,
         video_path=video_path,
         project_id=project_id,
+        extract_keyframes=extract_keyframes,
+        scene_analysis=scene_analysis,
+        score_mode=score_mode,
+        location_weight=location_weight,
+        character_weight=character_weight,
+        plot_weight=plot_weight,
     )
     return result
 

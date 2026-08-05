@@ -1,0 +1,9 @@
+ffmpeg_scene:
+  version: "0.1.0"
+  description: "Shot boundary detection via FFmpeg scene filter. No GPU, no PyTorch."
+  task: shot_boundary_detection
+  provider: ffmpeg
+  runtime:
+    threshold: 0.1
+    timeout: 300
+  enabled: true

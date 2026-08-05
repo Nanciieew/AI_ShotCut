@@ -27,6 +27,11 @@ def build_omnishotcut_canvas(
     video_id: str,
     extract_keyframes: bool = False,
     scene_analysis: bool = False,
+    shot_model: str = "ffmpeg_scene",
+    score_mode: str = "weighted",
+    location_weight: int = 35,
+    character_weight: int = 35,
+    plot_weight: int = 30,
 ) -> chain:
     """Build the OmniShotCut analysis pipeline canvas.
 
@@ -37,10 +42,18 @@ def build_omnishotcut_canvas(
     video_id : str
         Video to process.
     extract_keyframes : bool
-        When True, extract 25%/50%/75% keyframes after shot detection.
+        When True, extract 25%/75% keyframes after shot detection.
     scene_analysis : bool
         When True, run full scene scoring: subtitle transcription,
         VLM + LLM scoring, and final scene merging.
+    score_mode : str
+        Merge mode: location_only, character_only, plot_only, custom, weighted.
+    location_weight : int
+        Location weight 1-10 (custom mode only).
+    character_weight : int
+        Character weight 1-10 (custom mode only).
+    plot_weight : int
+        Plot weight 1-10 (custom mode only).
 
     Returns
     -------
@@ -52,7 +65,7 @@ def build_omnishotcut_canvas(
     steps: list = [
         app.signature("video.normalize", args=(task_id, video_id),
                       immutable=True, queue="video"),
-        app.signature("shot.detect", args=(task_id, video_id, "omnishotcut"),
+        app.signature("shot.detect", args=(task_id, video_id, shot_model),
                       immutable=True, queue="shot"),
     ]
 
@@ -78,7 +91,9 @@ def build_omnishotcut_canvas(
         )
         # Merge after both scoring groups complete
         steps.append(
-            app.signature("scene.merge_scores", args=(task_id, video_id),
+            app.signature("scene.merge_scores",
+                          args=(task_id, video_id, score_mode,
+                                location_weight, character_weight, plot_weight),
                           immutable=True, queue="scene")
         )
     elif extract_keyframes:

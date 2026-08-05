@@ -37,6 +37,13 @@ try:
 except ImportError:
     pass
 
+try:
+    from models.ffmpeg_scene.adapter import FFmpegSceneAdapter
+
+    _ADAPTER_REGISTRY["ffmpeg_scene"] = FFmpegSceneAdapter
+except ImportError:
+    pass
+
 
 def _get_adapter_class(model_name: str):
     """Look up an adapter class by model name."""
