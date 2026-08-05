@@ -51,6 +51,8 @@ async def start_shot_analysis(
     location_weight: int = Form(default=35, ge=1, le=10),
     character_weight: int = Form(default=35, ge=1, le=10),
     plot_weight: int = Form(default=30, ge=1, le=10),
+    cut_intensity: str = Form(default="medium"),
+    min_distance_s: int = Form(default=12, ge=5, le=60),
     db: AsyncSession = Depends(get_db),
 ):
     """Start video analysis pipeline.
@@ -73,6 +75,8 @@ async def start_shot_analysis(
         location_weight=location_weight,
         character_weight=character_weight,
         plot_weight=plot_weight,
+        cut_intensity=cut_intensity,
+        min_distance_s=min_distance_s,
     )
     return result
 

@@ -29,6 +29,8 @@ async def submit_full_pipeline(
     location_weight: int = 35,
     character_weight: int = 35,
     plot_weight: int = 30,
+    cut_intensity: str = "medium",
+    min_distance_s: int = 12,
 ) -> dict:
     """Create DB records and submit the analysis pipeline chain.
 
@@ -52,6 +54,10 @@ async def submit_full_pipeline(
         Character weight 1-10 (custom mode only).
     plot_weight : int
         Plot weight 1-10 (custom mode only).
+    cut_intensity : str
+        high (6%%) | medium (4%%) | low (1%%) target scene count.
+    min_distance_s : int
+        Minimum seconds between selected boundaries (default 12).
 
     Returns
     -------
@@ -103,6 +109,8 @@ async def submit_full_pipeline(
             location_weight=location_weight,
             character_weight=character_weight,
             plot_weight=plot_weight,
+            cut_intensity=cut_intensity,
+            min_distance_s=min_distance_s,
         )
         result = canvas.apply_async()
         celery_task_id = result.id
