@@ -61,3 +61,4 @@ docker-compose.override.yml
 # --- Logs ---
 *.log
 logs/
+frontend/node_modules/
