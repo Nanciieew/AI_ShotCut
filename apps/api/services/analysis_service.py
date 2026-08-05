@@ -26,9 +26,9 @@ async def submit_full_pipeline(
     scene_analysis: bool = False,
     shot_model: str = "ffmpeg_scene",
     score_mode: str = "weighted",
-    location_weight: int = 5,
-    character_weight: int = 5,
-    plot_weight: int = 5,
+    location_weight: int = 1,
+    character_weight: int = 1,
+    plot_weight: int = 1,
     cut_intensity: str = "medium",
     min_distance_s: int = 12,
 ) -> dict:
@@ -281,9 +281,8 @@ async def submit_full_pipeline(
             elif score_mode == "character_only": W = (0.0, 1.0, 0.0)
             elif score_mode == "plot_only": W = (0.0, 0.0, 1.0)
             elif score_mode == "custom":
-                total = location_weight + character_weight + plot_weight
-                W = (location_weight/total, character_weight/total, plot_weight/total) if total > 0 else (0.35, 0.35, 0.30)
-            else: W = (0.35, 0.35, 0.30)
+                total = float(location_weight + character_weight + plot_weight)
+                W = (location_weight/total, character_weight/total, plot_weight/total) if total > 0 else (1.0, 0.0, 0.0)
 
             INTENSITY = {"high": 0.06, "medium": 0.04, "low": 0.01}
             target_count = max(3, int(len(shots_list) * INTENSITY.get(cut_intensity, 0.04)))

@@ -14,7 +14,7 @@ const purposes = [
 ]
 const isScene = () => purpose.value !== 'shot_detection'
 const modes = [
-  { key:'weighted', label:'Weighted' }, { key:'location_only', label:'Location' },
+  { key:'location_only', label:'Location' },
   { key:'character_only', label:'Character' }, { key:'plot_only', label:'Plot' }, { key:'custom', label:'Custom' },
 ]
 const intensityLabels = { high:'High', medium:'Medium', low:'Low' }

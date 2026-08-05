@@ -82,10 +82,10 @@ async def start_shot_analysis(
     extract_keyframes: bool = Form(default=False),
     scene_analysis: bool = Form(default=False),
     shot_model: str = Form(default="ffmpeg_scene"),
-    score_mode: str = Form(default="weighted"),
-    location_w: str = Form(default="5"),
-    character_w: str = Form(default="5"),
-    plot_w: str = Form(default="5"),
+    score_mode: str = Form(default="location_only"),
+    location_w: str = Form(default=""),
+    character_w: str = Form(default=""),
+    plot_w: str = Form(default=""),
     cut_intensity: str = Form(default="medium"),
     min_distance_s: int = Form(default=12, ge=5, le=60),
     db: AsyncSession = Depends(get_db),
@@ -98,8 +98,8 @@ async def start_shot_analysis(
           → scene.merge_scores → pipeline_complete
 
     Set scene_analysis=True to enable full scene scoring.
-    score_mode: location_only | character_only | plot_only | custom | weighted
-    video_path can be empty — auto-resolved from the uploaded video's source_uri.
+    score_mode: location_only | character_only | plot_only | custom
+    video_path can be empty — auto-resolved.
     """
     # Auto-resolve video_path from uploaded video if empty
     if not video_path:
@@ -124,9 +124,9 @@ async def start_shot_analysis(
         extract_keyframes=extract_keyframes,
         scene_analysis=scene_analysis,
         score_mode=score_mode,
-        location_weight=int(location_w),
-        character_weight=int(character_w),
-        plot_weight=int(plot_w),
+        location_weight=int(location_w) if location_w else 1,
+        character_weight=int(character_w) if character_w else 1,
+        plot_weight=int(plot_w) if plot_w else 1,
         cut_intensity=cut_intensity,
         min_distance_s=min_distance_s,
     )
