@@ -162,17 +162,25 @@ async def submit_full_pipeline(
                 task_repo = TaskRepository(session)
                 task_repo.update_progress(task_id, 40, stage="extract_keyframes"); session.commit()
 
-            # Step 3: Keyframes
+            # Step 3+4: Keyframes ∥ Subtitle (parallel)
+            from concurrent.futures import ThreadPoolExecutor, as_completed
             from core.media.keyframes import compute_keyframe_targets, extract_keyframes
-            targets = compute_keyframe_targets(adapter._last_result.get("shots", []), probe_after.fps_num, probe_after.fps_den)
-            kf_dir = os.path.join(storage_root, artifact_base, "shot_keyframes", "1.0.0")
-            os.makedirs(kf_dir, exist_ok=True)
-            extract_keyframes(normalized_path, targets, Path(kf_dir), max_long_side=320, quality=85)
 
-            # Also extract proxy for VLM
+            shots_list = adapter._last_result.get("shots", [])
+            targets = compute_keyframe_targets(shots_list, probe_after.fps_num, probe_after.fps_den)
             kf_proxy = os.path.join(storage_root, artifact_base, "shot_keyframes_proxy", "1.0.0")
             os.makedirs(kf_proxy, exist_ok=True)
-            extract_keyframes(normalized_path, targets, Path(kf_proxy), max_long_side=320, quality=85)
+
+            segs = []
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                kf_future = pool.submit(lambda: extract_keyframes(normalized_path, targets, Path(kf_proxy), max_long_side=320, quality=85))
+
+                if scene_analysis:
+                    from models.whisper.adapter import WhisperAdapter
+                    wa = WhisperAdapter(); wa.load()
+                    sub_future = pool.submit(lambda: wa.predict({"task_id": task_id, "video_id": vid, "model": {"name": "whisper", "version": "1.0.0"}, "input": {"video_uri": nrml_uri}, "parameters": {}}))
+                    segs = sub_future.result().get("artifacts", {}).get("subtitle_segments", [])
+                kf_future.result()  # wait for keyframes too
 
             if not scene_analysis:
                 with get_sync_session() as session:
@@ -181,48 +189,44 @@ async def submit_full_pipeline(
                     task_repo.update_progress(task_id, 100, stage="complete"); session.commit()
                 return
 
-            # Step 4: Subtitle
             with get_sync_session() as session:
                 task_repo = TaskRepository(session)
-                task_repo.update_progress(task_id, 50, stage="transcribe"); session.commit()
+                task_repo.update_progress(task_id, 60, stage="scoring"); session.commit()
 
-            from models.whisper.adapter import WhisperAdapter
-            wa = WhisperAdapter(); wa.load()
-            sub_result = wa.predict({"task_id": task_id, "video_id": vid, "model": {"name": "whisper", "version": "1.0.0"}, "input": {"video_uri": nrml_uri}, "parameters": {}})
-            segs = sub_result.get("artifacts", {}).get("subtitle_segments", [])
-
-            # Step 5: VLM Scoring
-            with get_sync_session() as session:
-                task_repo = TaskRepository(session)
-                task_repo.update_progress(task_id, 60, stage="score_vlm"); session.commit()
-
-            shots_list = adapter._last_result.get("shots", [])
+            # Step 5+6: VLM ∥ DeepSeek (parallel)
             vlm_scores = []
-            if len(shots_list) >= 2:
-                from models.vlm_boundary.adapter import VLMSceneBoundaryAdapter
-                va = VLMSceneBoundaryAdapter(); va.load()
-                v_result = va.predict({"task_id": task_id, "video_id": vid, "model": {"name": "vlm_scene_boundary", "version": "0.1.0"}, "input": {"shots_uri": f"storage://{artifact_base}/omnishotcut/0.1.0/shots.json", "keyframes_dir": kf_proxy}, "parameters": {}})
-                vlm_scores = va._last_result.get("scores", [])
-
-            # Step 6: DeepSeek Plot
-            with get_sync_session() as session:
-                task_repo = TaskRepository(session)
-                task_repo.update_progress(task_id, 75, stage="score_plot"); session.commit()
-
             plot_scores = []
-            if segs:
-                sub_lines = [f"[{int(s['start_ms']//60000):02d}:{(s['start_ms']%60000)/1000:05.2f}] {s['text'][:80]}" for s in segs]
-                from models.vlm_boundary.providers.deepseek_llm import DeepSeekLLMProvider
-                api_key = os.getenv("QWEN_VL_API_KEY", "")
-                if not api_key:
-                    try:
-                        from core.config import get_settings; api_key = get_settings().qwen_vl_api_key
-                    except Exception: pass
-                dp = DeepSeekLLMProvider(api_key=api_key) if api_key else None
-                if dp:
-                    dprompt = f"你是电影情节分析助手。以下是电影字幕时间线。请规划叙事事件（大/中/小三层）。大事件(major)：类似剧本的'幕'。中事件(medium)：大事件内的阶段。小事件(minor)：中事件内的节拍。每个事件输出label,level,time_range(起止ms)。只输出JSON：{{\"events\":[{{\"label\":\"...\",\"level\":\"major\",\"time_range\":{{\"start_ms\":0,\"end_ms\":600000}}}}]}}\n---\n" + "\n".join(sub_lines)
-                    dp_result = dp.send([{"role": "user", "content": dprompt}], max_tokens=4096, timeout=600)
-                    raw_d = dp_result.get("data", {})
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                vlm_future = None
+                if len(shots_list) >= 2:
+                    from models.vlm_boundary.adapter import VLMSceneBoundaryAdapter
+                    def run_vlm():
+                        va = VLMSceneBoundaryAdapter(); va.load()
+                        va.predict({"task_id": task_id, "video_id": vid, "model": {"name": "vlm_scene_boundary", "version": "0.1.0"}, "input": {"shots_uri": f"storage://{artifact_base}/omnishotcut/0.1.0/shots.json", "keyframes_dir": kf_proxy}, "parameters": {}})
+                        return va._last_result.get("scores", [])
+                    vlm_future = pool.submit(run_vlm)
+
+                plot_future = None
+                if segs:
+                    sub_lines = [f"[{int(s['start_ms']//60000):02d}:{(s['start_ms']%60000)/1000:05.2f}] {s['text'][:80]}" for s in segs]
+                    from models.vlm_boundary.providers.deepseek_llm import DeepSeekLLMProvider
+                    api_key = os.getenv("QWEN_VL_API_KEY", "")
+                    if not api_key:
+                        try:
+                            from core.config import get_settings; api_key = get_settings().qwen_vl_api_key
+                        except Exception: pass
+                    if api_key:
+                        dp = DeepSeekLLMProvider(api_key=api_key)
+                        dprompt = f"你是电影情节分析助手。以下是电影字幕时间线。请规划叙事事件（大/中/小三层）。大事件(major)：类似剧本的'幕'。中事件(medium)：大事件内的阶段。小事件(minor)：中事件内的节拍。每个事件输出label,level,time_range(起止ms)。只输出JSON：{{\"events\":[{{\"label\":\"...\",\"level\":\"major\",\"time_range\":{{\"start_ms\":0,\"end_ms\":600000}}}}]}}\n---\n" + "\n".join(sub_lines)
+                        plot_future = pool.submit(lambda: dp.send([{"role": "user", "content": dprompt}], max_tokens=4096, timeout=600))
+
+                # Collect VLM results
+                if vlm_future:
+                    vlm_scores = vlm_future.result()
+
+                # Collect Plot results
+                if plot_future:
+                    raw_d = plot_future.result().get("data", {})
                     raw_txt = raw_d.get("raw", str(raw_d))
                     events = raw_d.get("events", [])
                     if not events:
