@@ -195,7 +195,7 @@ def build_keyframe_extract_command(
     output_dir: str,
     shots: list[dict],
     positions: list | None = None,
-) -> list[str]:
+) -> tuple[list[str], list]:
     """Build FFmpeg command to extract keyframes for all shots in ONE pass.
 
     Uses select filter with frame index matching. Extracts start + mid + end

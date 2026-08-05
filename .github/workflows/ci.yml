@@ -48,7 +48,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements/api.txt
-          pip install mypy types-pyyaml types-redis
+          pip install mypy types-pyyaml types-redis types-requests
 
       - name: MyPy
         run: mypy . --ignore-missing-imports --explicit-package-bases

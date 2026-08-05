@@ -107,8 +107,8 @@ async def start_shot_analysis(
 
         from core.database.models import Video as VideoModel
 
-        result = await db.execute(select(VideoModel).where(VideoModel.video_id == video_id))
-        video_row = result.scalar_one_or_none()
+        db_result = await db.execute(select(VideoModel).where(VideoModel.video_id == video_id))
+        video_row = db_result.scalar_one_or_none()
         if video_row is None:
             raise HTTPException(
                 status_code=404,
