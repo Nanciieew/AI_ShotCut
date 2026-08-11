@@ -1,4 +1,9 @@
-"""VLM/LLM Adapter factory — loads from registry or direct import."""
+"""VLM/LLM Adapter factory — DEPRECATED (2026-08).
+
+This factory is never imported by production code. Model instantiation
+happens inline in analysis_service.py and worker tasks. Will be replaced
+by core/mcp/registry.py in Phase 2 MCP migration.
+"""
 
 _ADAPTERS: dict[str, type] = {}
 

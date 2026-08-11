@@ -171,49 +171,10 @@
 
 ---
 
-### 4.2 Doubao ASR — Speech to Text (subtitle.transcribe)
+### 4.2 Doubao ASR — REMOVED (2026-08)
 
-**输入**：
-```json
-{
-  "schema_version": "1.0",
-  "task_id": "task_001",
-  "video_id": "video_001",
-  "model": { "name": "whisper", "version": "1.0.0" },
-  "input": {
-    "audio_uri": "storage://.../audio.wav",
-    "video_uri": "storage://.../normalized.mp4"
-  },
-  "parameters": {
-    "language": "zh"
-  }
-}
-```
-
-> 火山引擎 OpenSpeech API。`video_uri` 存在时自动 ffmpeg 提取 16kHz mono WAV。
-> 音频 >15min 自动分片 + ThreadPoolExecutor 并行，合并时间戳。
-
-**输出 Artifact**：`subtitles.json`
-
-```json
-{
-  "video_id": "video_001",
-  "subtitle_source": "doubao_asr",
-  "language": "zh",
-  "subtitle_segments": [
-    {
-      "subtitle_id": "subtitle_000001",
-      "start_ms": 1260,
-      "end_ms": 3480,
-      "text": "...",
-      "language": "zh",
-      "confidence": 0.91
-    }
-  ]
-}
-```
-
-> 极速模式 (bigmodel) 返回纯文本无 utterance 级时间戳 → adapter 生成单个 segment。
+> Whisper/Doubao ASR module removed — not currently needed.
+> Recover `models/whisper/` from git history if ASR is required in the future.
 
 ---
 

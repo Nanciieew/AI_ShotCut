@@ -174,7 +174,6 @@ async def serve_keyframe(
     import os
 
     from fastapi.responses import FileResponse
-
     from sqlalchemy import select
 
     from core.database.models import Video as VideoModel
@@ -186,8 +185,16 @@ async def serve_keyframe(
 
     storage_root = os.getenv("STORAGE_ROOT", "./data")
     project_id = video.project_id or "default"
-    kf_dir = os.path.join(storage_root, "projects", project_id, "videos", video_id,
-                          "artifacts", "shot_keyframes", "1.0.0")
+    kf_dir = os.path.join(
+        storage_root,
+        "projects",
+        project_id,
+        "videos",
+        video_id,
+        "artifacts",
+        "shot_keyframes",
+        "1.0.0",
+    )
     img_path = os.path.join(kf_dir, f"{shot_id}_{img_name}.jpg")
 
     # Fallback naming convention

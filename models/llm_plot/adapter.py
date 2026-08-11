@@ -1,4 +1,9 @@
-"""LLM Plot Event Adapter — DeepSeek. Text-only (subtitles -> plot scores)."""
+"""LLM Plot Event Adapter — DeepSeek. STUB (Phase 2).
+
+predict() is a placeholder. Real plot scoring currently lives inline in
+apps/api/services/analysis_service.py (calls DeepSeekLLMProvider directly).
+Will be implemented properly in Phase 2 MCP migration.
+"""
 
 import os
 from typing import Any

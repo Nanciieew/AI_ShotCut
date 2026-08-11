@@ -24,6 +24,7 @@ models:
       5-second CPU alternative to OmniShotCut. Uses FFmpeg select filter.
       threshold=0.1 for best recall; VLM will re-score all boundaries.
 
+  # whisper: REMOVED — Doubao ASR not currently needed. See commit log for recovery.
   omnishotcut:
     task: shot_boundary_detection
     description: Detects shot boundaries (hard cuts, dissolves, wipes) in video.
@@ -43,67 +44,6 @@ models:
       Weights: HuggingFace Hub (uva-cv-lab/OmniShotCut).
       Verified: installs cleanly, loads on CPU with minor patch.
       GPU optional — CPU inference works at ~22s for short clip.
-
-  whisper:
-    task: speech_to_text
-    description: Speech recognition with word-level timestamps.
-    repository: https://github.com/openai/whisper
-    revision: ""
-    code_license: MIT
-    weights_license: MIT
-    dataset_license: unknown
-    commercial_use: true
-    attribution_required: false
-    redistribution_allowed: true
-    adapter: models.whisper.adapter.WhisperAdapter
-    enabled: false
-    requires_gpu: true
-    notes: |
-      OpenAI Whisper — MIT license. Large-v3 model weights also MIT.
-      Confirm dataset license for training data if redistribution matters.
-
-  scene_boundary:
-    task: scene_boundary_detection
-    description: Predicts scene boundaries from multi-modal features.
-    repository: ""
-    revision: ""
-    code_license: unknown
-    weights_license: unknown
-    dataset_license: unknown
-    commercial_use: unknown
-    attribution_required: unknown
-    redistribution_allowed: unknown
-    adapter: models.scene_boundary.adapter.SceneBoundaryAdapter
-    enabled: false
-    requires_gpu: true
-    notes: |
-      Candidate models: SceneSeg, BaSSL. Selection pending.
-
-  visual_encoder:
-    task: visual_feature_extraction
-    description: Extracts per-shot visual embeddings.
-    repository: ""
-    revision: ""
-    code_license: unknown
-    weights_license: unknown
-    dataset_license: unknown
-    commercial_use: unknown
-    adapter: models.visual_encoder.adapter.VisualEncoderAdapter
-    enabled: false
-    requires_gpu: true
-
-  audio_encoder:
-    task: audio_feature_extraction
-    description: Extracts per-shot or per-window audio embeddings.
-    repository: ""
-    revision: ""
-    code_license: unknown
-    weights_license: unknown
-    dataset_license: unknown
-    commercial_use: unknown
-    adapter: models.audio_encoder.adapter.AudioEncoderAdapter
-    enabled: false
-    requires_gpu: false
 
   vlm_scene_boundary:
     task: scene_boundary_detection
