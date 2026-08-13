@@ -103,22 +103,10 @@ def collect_executable_info(
             }
         )
 
-    # --- Redis / PostgreSQL config presence (no secrets) ---
+    # --- Database config presence (no secrets) ---
     import os
 
-    redis_url = os.getenv("REDIS_URL") or os.getenv("CELERY_BROKER_URL")
     db_url = os.getenv("DATABASE_URL")
-
-    results.append(
-        {
-            "check": "redis_configured",
-            "status": "PASS" if redis_url else "WARNING",
-            "value": bool(redis_url),
-            "detail": "REDIS_URL or CELERY_BROKER_URL is set"
-            if redis_url
-            else "No Redis configuration found",
-        }
-    )
 
     # Only report DB type, never the full URL
     db_type = "unknown"

@@ -1,19 +1,16 @@
 """Keyframe extraction service — shared orchestration.
 
-Called by both the Celery task (workers/tasks/keyframe_tasks.py) and
-the local pipeline (pipelines/services/omnishotcut_pipeline.py).
+Called by the in-process Workflow/Executor and
+the local pipeline (pipelines/services/omnishotcut_pipeline.py — historical name).
 
 Per CLAUDE.md §19: do NOT create separate local/Docker implementations.
 """
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from core.artifacts import ArtifactInputRef, ArtifactProducer
-from core.artifacts.writer import ArtifactWriter
 from core.media.exceptions import KeyframeExtractionError
 from core.media.keyframes import (
     KeyframeTarget,
@@ -42,6 +39,7 @@ class KeyframeServiceResult:
     error_code: str = ""
     error_message: str = ""
     raw_targets: list[KeyframeTarget] = field(default_factory=list)
+    summary_data: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -61,13 +59,13 @@ def run_keyframe_extraction(
     shots_artifact_id: str,
     normalized_video_artifact_id: str,
     video_id: str,
-    run_id: str,
-    output_root: str,
+    keyframes_dir: str,
+    keyframes_uri_prefix: str,
     image_format: str = "jpeg",
     quality: int = 85,
     max_long_side: int = 672,
 ) -> KeyframeServiceResult:
-    """Extract keyframes for every shot and write the summary artifact.
+    """Extract keyframes for every shot and return the canonical summary data.
 
     Parameters
     ----------
@@ -87,10 +85,8 @@ def run_keyframe_extraction(
         Artifact ID of the normalized video (for lineage).
     video_id : str
         Video identifier.
-    run_id : str
-        ModelRun identifier for this extraction.
-    output_root : str
-        Storage root directory.
+    keyframes_dir, keyframes_uri_prefix : str
+        Storage-layer-provided output directory and URI prefix for image references.
     image_format : str
         "jpeg" or "png".
     quality : int
@@ -102,10 +98,7 @@ def run_keyframe_extraction(
     -------
     KeyframeServiceResult
     """
-    time.monotonic()
     result = KeyframeServiceResult(status="FAILED")
-    writer = ArtifactWriter(output_root)
-
     # --- 1. Compute targets ---
     shots_list = shots_data.get("shots", [])
     if not shots_list:
@@ -130,21 +123,7 @@ def run_keyframe_extraction(
     # --- 2. Extraction ---
     producer_name = "ffmpeg_keyframes"
     producer_version = "1.0.0"
-
-    artifact_base = (
-        f"projects/{{project}}/videos/{video_id}/artifacts/{producer_name}/{producer_version}"
-    )
-    # Placeholder project — filled at write time
-    artifact_base.format(project="_")
-    # Actually build the real path
-    # We need the project_id — extract from shots_data or use "default"
-    project_id = "default"  # keyframe service uses default project
-    artifact_base = (
-        f"projects/{project_id}/videos/{video_id}/artifacts/{producer_name}/{producer_version}"
-    )
-
-    images_dir = Path(output_root) / artifact_base / "images"
-    images_dir.mkdir(parents=True, exist_ok=True)
+    images_dir = Path(keyframes_dir)
 
     try:
         extraction = extract_keyframes(
@@ -174,6 +153,7 @@ def run_keyframe_extraction(
     shot_map: dict[str, list[KeyframeTarget]] = {}
     for t in extraction.saved:
         shot_map.setdefault(t.shot_id, []).append(t)
+    saved_by_frame = {target.frame_number: target for target in extraction.saved}
 
     # Detect duplicated references (targets that were deduped from raw)
     raw_per_shot: dict[str, list[dict]] = {}
@@ -209,7 +189,6 @@ def run_keyframe_extraction(
         for raw in raw_samples:
             target = target_by_frame.get(raw["frame_number"])
             if target is not None:
-                image_rel = f"{artifact_base}/images/{target.filename}"
                 samples.append(
                     {
                         "position_num": raw["position_num"],
@@ -217,26 +196,31 @@ def run_keyframe_extraction(
                         "frame_number": target.frame_number,
                         "timestamp_ms": target.timestamp_ms,
                         "decoded_pts_ms": target.decoded_pts_ms,
-                        "uri": f"storage://{image_rel}",
+                        "uri": f"{keyframes_uri_prefix.rstrip('/')}/{target.filename}",
                         "sha256": target.sha256,
                         "size_bytes": target.size_bytes,
                         "duplicated_reference": False,
                     }
                 )
             else:
-                # This sample was deduped — point to the closest saved target
-                # (same frame_number was de-duplicated globally)
-                # Find the target that was actually saved for this frame
+                # This sample was globally deduplicated. Reuse the URI of the
+                # one encoded image for that exact frame, even when it belongs
+                # to another very short Shot.
+                saved = saved_by_frame.get(raw["frame_number"])
                 samples.append(
                     {
                         "position_num": raw["position_num"],
                         "position_den": raw["position_den"],
                         "frame_number": raw["frame_number"],
                         "timestamp_ms": raw["timestamp_ms"],
-                        "decoded_pts_ms": None,
-                        "uri": None,
-                        "sha256": "",
-                        "size_bytes": 0,
+                        "decoded_pts_ms": saved.decoded_pts_ms if saved else None,
+                        "uri": (
+                            f"{keyframes_uri_prefix.rstrip('/')}/{saved.filename}"
+                            if saved
+                            else None
+                        ),
+                        "sha256": saved.sha256 if saved else "",
+                        "size_bytes": saved.size_bytes if saved else 0,
                         "duplicated_reference": True,
                         "note": (
                             "Frame not extracted (same frame as another sample, or decode miss)"
@@ -317,38 +301,8 @@ def run_keyframe_extraction(
         },
     }
 
-    summary_rel = f"{artifact_base}/keyframes.json"
-
-    producer = ArtifactProducer(
-        model_name=producer_name,
-        model_version=producer_version,
-        code_revision="unknown",
-        weight_revision="unknown",
-    )
-
-    input_ref = ArtifactInputRef(
-        video_sha256="",
-        input_artifact_uris=[
-            f"storage://{artifact_base.format(project=project_id)}/../video_normalization/*/normalized.mp4",
-        ],
-    )
-
-    manifest = writer.write_json_artifact(
-        relative_path=summary_rel,
-        data=summary_data,
-        artifact_type="shot_keyframes",
-        artifact_id=f"{run_id}_keyframes",
-        video_id=video_id,
-        run_id=run_id,
-        producer=producer,
-        input_ref=input_ref,
-        schema_version="1.0",
-    )
-
     result.status = "SUCCEEDED"
-    result.summary_artifact_id = f"{run_id}_keyframes"
-    result.summary_artifact_uri = f"storage://{summary_rel}"
-    result.summary_sha256 = manifest.output.sha256
+    result.summary_data = summary_data
     result.shot_count = len(shots_list)
     result.unique_image_count = unique_images
     result.deduplicated_count = dedup_count

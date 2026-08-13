@@ -7,3 +7,14 @@
 fastapi==0.115.*
 uvicorn[standard]==0.32.*
 python-multipart==0.0.*
+
+# --- In-process media/keyframe extraction ---
+# Workflow imports core.media.keyframes inside the API executor process.
+av>=14,<19
+Pillow>=11,<13
+
+# --- Database drivers ---
+# Async FastAPI/Alembic access and synchronous Workflow/Executor access.
+asyncpg==0.30.*
+psycopg2-binary==2.9.*
+aiosqlite>=0.20

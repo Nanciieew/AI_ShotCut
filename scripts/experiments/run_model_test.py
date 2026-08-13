@@ -2,7 +2,7 @@
 """Universal model test: raw → IO_Rule validate → normalized output.
 
 Usage:
-  python scripts/experiments/run_model_test.py --model omnishotcut
+  python scripts/experiments/run_model_test.py --model ffmpeg_scene
 
 Steps:
   1. Load model adapter from models/{model}/adapter.py
@@ -36,13 +36,37 @@ def setup_ffmpeg() -> None:
 
 
 def load_adapter(model_name: str):
-    """Dynamically load a model adapter by finding BaseModelAdapter subclass."""
+    """Dynamically load a model adapter by finding BaseModelAdapter subclass.
+
+    Tries models.{model_name}.adapter first. On ModuleNotFoundError,
+    falls back to looking up registry.yaml for the correct module path.
+    """
     module_path = f"models.{model_name}.adapter"
     try:
         mod = importlib.import_module(module_path)
     except ModuleNotFoundError:
-        print(f"[FAIL] Module not found: {module_path}")
-        sys.exit(1)
+        # Fallback: look up registry.yaml for the adapter class path
+        import yaml
+
+        registry_path = PROJECT_ROOT / "models" / "registry.yaml"
+        if registry_path.exists():
+            with open(registry_path) as f:
+                registry = yaml.safe_load(f)
+            entry = registry.get(model_name, {})
+            adapter_path = entry.get("adapter", "")
+            if adapter_path:
+                # e.g. "models.llm_plot.adapter.PlotEventAdapter" → "models.llm_plot.adapter"
+                module_path = adapter_path.rsplit(".", 1)[0]
+                mod = importlib.import_module(module_path)
+            else:
+                print(
+                    f"[FAIL] Module not found: models.{model_name}.adapter "
+                    f"and no registry entry for '{model_name}'"
+                )
+                sys.exit(1)
+        else:
+            print(f"[FAIL] Module not found: {module_path}")
+            sys.exit(1)
 
     # Find the adapter class (subclass of BaseModelAdapter)
     from models.base.adapter import BaseModelAdapter
@@ -166,7 +190,7 @@ def check_shots_artifact(shots_data: dict) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Universal model test runner")
-    parser.add_argument("--model", required=True, help="Model name (e.g. omnishotcut)")
+    parser.add_argument("--model", required=True, help="Model name (e.g. ffmpeg_scene)")
     args = parser.parse_args()
 
     model_name = args.model

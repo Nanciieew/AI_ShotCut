@@ -1,7 +1,6 @@
 """FFmpeg Scene Detection Adapter — calls FFmpeg scene filter to detect shots.
 
-Replaces OmniShotCut when GPU/PyTorch is unavailable.
-Pure FFmpeg: ~5s vs OmniShotCut ~35min on same video.
+Pure FFmpeg scene detection: ~5s on typical video, no GPU needed.
 """
 
 import json
@@ -21,7 +20,7 @@ class FFmpegSceneAdapter(BaseModelAdapter):
       input.video_uri — storage:// URI to normalized.mp4
 
     Output:
-      shots.json — same format as OmniShotCut: [{shot_id, index, start_ms, end_ms, ...}]
+      shots.json — [{shot_id, index, start_ms, end_ms, ...}]
     """
 
     name = "ffmpeg_scene"
@@ -76,9 +75,7 @@ class FFmpegSceneAdapter(BaseModelAdapter):
             runtime_ms = int((time.monotonic() - t0) * 1000)
             self._last_result = {"video_id": vid, "shots": shots}
 
-            art = (
-                f"projects/{vid[:8]}/videos/{vid}/artifacts/ffmpeg_scene/{self.version}/shots.json"
-            )
+            art = f"tasks/{tid}/shots/ffmpeg_scene.json"
 
             return {
                 "schema_version": sv,

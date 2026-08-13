@@ -1,5 +1,5 @@
 """
-Artifact repository — synchronous CRUD for Celery workers.
+Artifact repository — synchronous CRUD.
 """
 
 from sqlalchemy.orm import Session
@@ -8,31 +8,40 @@ from core.database.models import Artifact, ModelRun
 
 
 class ArtifactRepository:
-    """Minimal sync repository for Artifact records."""
+    """Sync repository for Artifact records."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
 
     def create(
         self,
+        *,
         artifact_id: str,
+        project_id: str,
         video_id: str,
-        run_id: str,
+        producer_run_id: str,
         artifact_type: str,
         uri: str,
         format: str,
+        mime_type: str | None = None,
+        size_bytes: int | None = None,
         schema_version: str = "1.0",
         sha256: str | None = None,
+        metadata_json: dict | None = None,
     ) -> Artifact:
         artifact = Artifact(
             artifact_id=artifact_id,
+            project_id=project_id,
             video_id=video_id,
-            run_id=run_id,
+            producer_run_id=producer_run_id,
             artifact_type=artifact_type,
             uri=uri,
             format=format,
+            mime_type=mime_type,
+            size_bytes=size_bytes,
             schema_version=schema_version,
             sha256=sha256,
+            metadata_json=metadata_json,
         )
         self._session.add(artifact)
         return artifact
@@ -55,17 +64,9 @@ class ArtifactRepository:
         artifact_type: str,
         model_name: str,
     ) -> Artifact | None:
-        """Get the artifact produced by a specific task's model run.
-
-        Joins Artifact → ModelRun on run_id, filters by task_id + model_name.
-        Returns the most recent if multiple exist (retry edge case).
-
-        This is the correct way for downstream tasks to find upstream artifacts —
-        it scopes to the same pipeline run, not just the latest for the video.
-        """
         return (
             self._session.query(Artifact)
-            .join(ModelRun, Artifact.run_id == ModelRun.run_id)
+            .join(ModelRun, Artifact.producer_run_id == ModelRun.run_id)
             .filter(
                 ModelRun.task_id == task_id,
                 ModelRun.model_name == model_name,

@@ -7,7 +7,6 @@
 # --- Model dependencies (CPU-only for CI) ---
 # OmniShotCut: install torch CPU first to avoid pulling CUDA wheels
 # In CI, use: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
--r models/omnishotcut.txt
 
 # --- Test runners ---
 pytest>=8.0

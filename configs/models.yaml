@@ -5,23 +5,6 @@
 # The adapter field points to the Python class that implements BaseModelAdapter.
 
 models:
-  omnishotcut:
-    enabled: false
-    adapter: "models.omnishotcut.adapter.OmniShotCutAdapter"
-    version: "1.0.0"
-    device: "cuda:0"
-    weights_uri: "model-store://omnishotcut/1.0.0/model.pth"
-    parameters:
-      mode: "clean_shot"
-
-  whisper:
-    enabled: false
-    adapter: "models.whisper.adapter.WhisperAdapter"
-    version: "large-v3"
-    device: "cuda:0"
-    parameters:
-      word_timestamps: true
-
   scene_boundary:
     enabled: false
     adapter: "models.scene_boundary.adapter.SceneBoundaryAdapter"

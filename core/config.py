@@ -50,26 +50,6 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
-    # Redis
-    # ------------------------------------------------------------------
-    redis_url: str = Field(
-        default="redis://localhost:6379/0",
-        description="Redis connection URL.",
-    )
-
-    # ------------------------------------------------------------------
-    # Celery
-    # ------------------------------------------------------------------
-    celery_broker_url: str = Field(
-        default="redis://localhost:6379/0",
-        description="Celery broker URL.",
-    )
-    celery_result_backend: str = Field(
-        default="redis://localhost:6379/1",
-        description="Celery result backend URL.",
-    )
-
-    # ------------------------------------------------------------------
     # Storage
     # ------------------------------------------------------------------
     storage_root: str = Field(
@@ -106,10 +86,80 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # VLM / LLM API
     # ------------------------------------------------------------------
-    qwen_vl_api_key: str = Field(
+    deepseek_api_key: str = Field(
         default="",
-        description="API key for Qwen2.5-VL + DeepSeek (modelarts-maas). "
-        "Must be set via QWEN_VL_API_KEY env var. Never hardcode in code.",
+        description="API key for DeepSeek (modelarts-maas). "
+        "Must be set via DEEPSEEK_API_KEY env var. Never hardcode in code.",
+    )
+    subtitle_llm_model: str = Field(
+        default="deepseek-v4-flash",
+        description="Model ID used by subtitle semantic analysis.",
+    )
+    subtitle_llm_base_url: str = Field(
+        default="https://api.modelarts-maas.com/v1/chat/completions",
+        description="OpenAI-compatible subtitle semantic chat-completions URL.",
+    )
+    subtitle_semantic_global_limit: int = Field(default=10, ge=1, le=10)
+    subtitle_semantic_local_limit: int = Field(default=5, ge=1, le=5)
+    subtitle_semantic_summary_chunk_chars: int = Field(default=12_000, ge=1000)
+    subtitle_semantic_summary_chunk_duration_ms: int = Field(default=900_000, ge=60_000)
+    subtitle_semantic_context_ms: int = Field(default=90_000, ge=10_000)
+    subtitle_semantic_rescore_batch_size: int = Field(default=20, ge=1, le=50)
+    subtitle_semantic_local_concurrency: int = Field(default=3, ge=1, le=4)
+    subtitle_semantic_max_snap_ms: int = Field(default=8_000, ge=0)
+    subtitle_semantic_max_snap_shots: int = Field(default=2, ge=0, le=10)
+
+    # ------------------------------------------------------------------
+    # Doubao SeedASR API (Volcano Engine OpenSpeech)
+    # ------------------------------------------------------------------
+    volc_app_id: str = Field(
+        default="",
+        description="Volcano Engine APP ID for SeedASR. "
+        "Must be set via VOLC_APP_ID env var. Never hardcode in code.",
+    )
+    volc_access_token: str = Field(
+        default="",
+        description="Volcano Engine Access Token for SeedASR. "
+        "Must be set via VOLC_ACCESS_TOKEN env var. Never hardcode in code.",
+    )
+    volc_vision_api_key: str = Field(
+        default="",
+        description="API key for Doubao-Seed-1.6-vision via Volcano Ark. "
+        "Format: api-key-{ts}: {uuid}. "
+        "Must be set via VOLC_VISION_API_KEY env var. Never hardcode in code.",
+    )
+    public_base_url: str = Field(
+        default="",
+        description="Publicly reachable base URL for provider artifact access. "
+        "Must use HTTPS. Set via PUBLIC_BASE_URL env var.",
+    )
+    artifact_signing_secret: str = Field(
+        default="",
+        description="Secret key for HMAC artifact URL signing. "
+        "Must be at least 32 chars in production. "
+        "Must be set via ARTIFACT_SIGNING_SECRET env var.",
+    )
+    provider_url_ttl_seconds: int = Field(
+        default=1800,
+        ge=60,
+        le=3600,
+        description="TTL for provider artifact URLs in seconds (1-3600).",
+    )
+    provider_internal_url: str = Field(
+        default="http://localhost:8001",
+        description="Internal Provider Gateway base URL used by readiness checks.",
+    )
+
+    # ------------------------------------------------------------------
+    # Upload
+    # ------------------------------------------------------------------
+    upload_max_bytes: int = Field(
+        default=2_000_000_000,
+        description="Maximum upload file size in bytes (default 2 GB).",
+    )
+    upload_allowed_containers: list[str] = Field(
+        default=["mp4", "mov", "avi", "mkv"],
+        description="Allowed video container formats. Extensions are detected via FFprobe.",
     )
 
     # ------------------------------------------------------------------

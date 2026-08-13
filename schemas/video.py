@@ -11,7 +11,7 @@ class Video(BaseModel):
     """
 
     video_id: str = Field(..., description="Unique video identifier, e.g. video_001")
-    project_id: str = Field(..., description="Owning project ID")
+    project_id: str = Field(..., description="Owning project identifier")
     source_uri: str = Field(
         default="",
         description="URI of the original uploaded file",

@@ -1,7 +1,7 @@
 """Keyframe extraction — single-pass PyAV decode + JPEG/PNG encode.
 
 Pure media logic with no database or storage knowledge.
-Called by pipelines/services/keyframe_service.py and Celery tasks.
+Called by pipelines/services/keyframe_service.py.
 
 Algorithm:
   1. Compute target frames per shot (25%, 50%, 75% positions)
@@ -30,6 +30,7 @@ from PIL import Image
 
 POSITIONS: tuple[tuple[int, int], ...] = (
     (1, 4),  # 25% — start-of-shot (used by VLM as img_1)
+    (1, 2),  # 50% — representative midpoint (used by result previews)
     (3, 4),  # 75% — end-of-shot (used by VLM as img_3)
 )
 

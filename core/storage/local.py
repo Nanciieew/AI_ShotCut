@@ -26,7 +26,7 @@ class LocalStorage(BaseStorage):
         # Keys are relative paths within the storage root.
         # Prevent traversal outside root.
         resolved = (self._root / key).resolve()
-        if not str(resolved).startswith(str(self._root)):
+        if not resolved.is_relative_to(self._root.resolve()):
             raise ValueError(f"Key escapes storage root: {key}")
         return resolved
 
@@ -71,20 +71,6 @@ class LocalStorage(BaseStorage):
     # ------------------------------------------------------------------
     # Convenience helpers
     # ------------------------------------------------------------------
-
-    def artifact_path(
-        self,
-        project_id: str,
-        video_id: str,
-        model_name: str,
-        model_version: str,
-        filename: str,
-    ) -> str:
-        """Build the canonical artifact storage key."""
-        return (
-            f"projects/{project_id}/videos/{video_id}/"
-            f"artifacts/{model_name}/{model_version}/{filename}"
-        )
 
     def uri_to_local_path(self, uri: str) -> Path:
         """Convert a storage:// URI to an absolute local path.

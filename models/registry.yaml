@@ -8,6 +8,22 @@
 #   4. Code license, weight license, and dataset license are distinct.
 
 models:
+  doubao_asr:
+    task: speech_to_text
+    description: Doubao SeedASR via Volcano Engine OpenSpeech. Async submit + poll.
+    repository: ""
+    revision: ""
+    code_license: unknown
+    weights_license: unknown
+    dataset_license: unknown
+    commercial_use: false
+    adapter: models.doubao_asr.adapter.DoubaoASRAdapter
+    enabled: true
+    requires_gpu: false
+    notes: |
+      Volcano Engine SeedASR (豆包录音文件识别 2.0). API key via VOLC_APP_ID + VOLC_ACCESS_TOKEN.
+      Audio served via HMAC-signed artifact endpoint + ngrok PUBLIC_BASE_URL.
+
   ffmpeg_scene:
     task: shot_boundary_detection
     description: Detects shot boundaries via FFmpeg scene filter. No GPU, no PyTorch.
@@ -21,29 +37,27 @@ models:
     enabled: true
     requires_gpu: false
     notes: |
-      5-second CPU alternative to OmniShotCut. Uses FFmpeg select filter.
+      5-second CPU shot detection via FFmpeg scene filter.
       threshold=0.1 for best recall; VLM will re-score all boundaries.
 
   # whisper: REMOVED — Doubao ASR not currently needed. See commit log for recovery.
-  omnishotcut:
-    task: shot_boundary_detection
-    description: Detects shot boundaries (hard cuts, dissolves, wipes) in video.
-    repository: https://github.com/UVA-Computer-Vision-Lab/OmniShotCut
-    revision: 23ad6fb41b296fb9258b0e7825125a914573b906
-    code_license: MIT
-    weights_license: MIT
+  # omnishotcut: REMOVED — replaced by ffmpeg_scene. See commit log for recovery.
+
+  doubao_vision:
+    task: scene_boundary_detection
+    description: Doubao-Seed-1.6-vision via Volcano Ark. Location + character scoring.
+    repository: ""
+    revision: ""
+    code_license: unknown
+    weights_license: unknown
     dataset_license: unknown
-    commercial_use: true
-    attribution_required: true
-    redistribution_allowed: true
-    adapter: models.omnishotcut.adapter.OmniShotCutAdapter
-    enabled: false
+    commercial_use: false
+    adapter: models.doubao_vision.adapter.DoubaoVisionAdapter
+    enabled: true
     requires_gpu: false
     notes: |
-      UVA Computer Vision Lab. MIT License for both code AND weights.
-      Weights: HuggingFace Hub (uva-cv-lab/OmniShotCut).
-      Verified: installs cleanly, loads on CPU with minor patch.
-      GPU optional — CPU inference works at ~22s for short clip.
+      Volcano Ark vision model. API key via VOLC_VISION_API_KEY.
+      /v3/chat/completions, OpenAI-compatible.
 
   vlm_scene_boundary:
     task: scene_boundary_detection
@@ -61,18 +75,19 @@ models:
       Qwen2.5-VL via modelarts-maas API. API key in QWEN_VL_API_KEY env var.
       Outputs location_character_scores.json per boundary.
 
-  plot_event:
-    task: plot_event_segmentation
-    description: Plans narrative event tree and scores shot boundaries for plot change via DeepSeek.
+  subtitle_semantic:
+    task: subtitle_continuity_analysis
+    description: Hierarchical subtitle semantics mapped to shot-boundary continuity evidence.
     repository: ""
     revision: ""
     code_license: unknown
     weights_license: unknown
     dataset_license: unknown
     commercial_use: false
-    adapter: models.llm_plot.adapter.PlotEventAdapter
-    enabled: false
+    adapter: models.subtitle_semantic.adapter.SubtitleSemanticAdapter
+    enabled: true
     requires_gpu: false
     notes: |
-      DeepSeek via modelarts-maas API (shared key with Qwen). API key in QWEN_VL_API_KEY.
-      Outputs plot_scores.json with event tree.
+      DeepSeek via modelarts-maas API. API key in DEEPSEEK_API_KEY.
+      Discovers global/local candidates, uniformly rescores them, and outputs
+      subtitle_continuity in [0,1].

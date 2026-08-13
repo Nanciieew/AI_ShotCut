@@ -20,7 +20,7 @@ class ModelRun(BaseModel):
     run_id: str = Field(..., description="Unique run identifier")
     task_id: str = Field(..., description="Parent pipeline task ID")
     video_id: str = Field(..., description="Associated video")
-    model_name: str = Field(..., description="Model identifier, e.g. omnishotcut")
+    model_name: str = Field(..., description="Model identifier, e.g. ffmpeg_scene")
     model_version: str = Field(..., description="Pinned model version, e.g. 1.0.0")
     code_revision: str | None = Field(default=None, description="Git commit of the adapter code")
     weight_revision: str | None = Field(default=None, description="Checkpoint or weight identifier")
@@ -34,6 +34,6 @@ class ModelRun(BaseModel):
     )
     device: str | None = Field(default=None, description="Device used, e.g. cuda:0, cpu")
 
-    # Lifecycle timestamps (populated by the Celery task runner)
+    # Lifecycle timestamps (populated by the Workflow/Executor)
     started_at: datetime | None = None
     finished_at: datetime | None = None

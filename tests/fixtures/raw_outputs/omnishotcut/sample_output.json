@@ -1,4 +1,0 @@
-{
-  "_note": "PLACEHOLDER — replace with actual output from: python run_raw_inference.py --input fixtures/videos/hard_cut.mp4 --output sample_output.json",
-  "_version": "0.0.1"
-}

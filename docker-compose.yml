@@ -1,19 +1,12 @@
 # ============================================================
 # Movie Analysis Platform — Docker Compose
 # ============================================================
-# Development setup with hot-reload for API.
-#
-# Startup order:
-#   postgres (healthy) + redis (healthy)
-#       â†"
-#   migrate (completed successfully)
-#       â†"
-#   api + worker
+# Direct pipeline — no Celery, no Redis. Pipeline runs
+# in FastAPI background thread via WorkflowService.
 #
 # Usage:
 #   docker compose up -d              # Start all services
 #   docker compose logs -f api        # Follow API logs
-#   docker compose logs -f worker     # Follow worker logs
 #   docker compose down               # Stop all services
 
 services:
@@ -37,22 +30,6 @@ services:
       retries: 5
       start_period: 5s
 
-  # --- Redis (Broker + Cache) ---
-  redis:
-    image: redis:7-alpine
-    container_name: movie-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-      start_period: 3s
-
   # --- Database Migration (one-shot) ---
   migrate:
     build:
@@ -61,9 +38,6 @@ services:
     container_name: movie-migrate
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/movie_analysis
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - STORAGE_ROOT=/data
       - MODEL_STORE_ROOT=/models
     volumes:
@@ -82,66 +56,91 @@ services:
     container_name: movie-api
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/movie_analysis
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - STORAGE_ROOT=/data
       - MODEL_STORE_ROOT=/models
       - DEBUG=true
       - ENVIRONMENT=development
+      - PROVIDER_INTERNAL_URL=http://provider:8001
     volumes:
       - .:/app
       - ./data:/data
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
-    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health/live || exit 1"]
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live', timeout=3)"
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 10s
 
-  # --- Celery Worker ---
-  worker:
+  # --- Provider Gateway (only signed artifact downloads) ---
+  provider:
     build:
       context: .
-      dockerfile: docker/worker.Dockerfile
-    container_name: movie-worker
+      dockerfile: docker/api.Dockerfile
+    container_name: movie-provider
+    # Local diagnostics only. Public traffic reaches this service through ngrok.
+    ports:
+      - "127.0.0.1:8001:8001"
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/movie_analysis
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - STORAGE_ROOT=/data
       - MODEL_STORE_ROOT=/models
+      - DEBUG=false
       - ENVIRONMENT=development
     volumes:
       - .:/app
       - ./data:/data
-      - ./model_store:/models:ro
-      - worker-pip-cache:/root/.cache/pip
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
-    command: celery -A workers.celery_app worker --loglevel=info --concurrency=1 -Q video,shot,subtitle,feature,scene,final,maintenance
+    command: uvicorn apps.api.provider_app:app --host 0.0.0.0 --port 8001
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8001/health/live', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # --- Public HTTPS tunnel for the Provider Gateway only ---
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: movie-ngrok
+    env_file:
+      - .env
+    command:
+      - http
+      - provider:8001
+      - --url=${PUBLIC_BASE_URL}
+      - --log=stdout
+    depends_on:
+      provider:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   data-volume:
   model-store-volume:
-  redis-data:
   postgres-data:
-  worker-pip-cache:

@@ -1,5 +1,5 @@
 """
-Task repository — synchronous CRUD for Celery workers.
+Task repository — synchronous CRUD for Workflow/Executor steps.
 
 All methods receive a SQLAlchemy Session and do NOT manage
 transactions themselves (caller commits/rolls back).
@@ -26,17 +26,25 @@ class TaskRepository:
         self,
         task_id: str,
         video_id: str,
+        project_id: str | None = None,
         task_type: str = "full_video_analysis",
-        celery_task_id: str | None = None,
+        executor_run_id: str | None = None,
+        parameters_json: dict | None = None,
+        retry_of_task_id: str | None = None,
+        retry_count: int = 0,
     ) -> Task:
         task = Task(
             task_id=task_id,
+            project_id=project_id or "0" * 32,
             video_id=video_id,
             task_type=task_type,
             status="PENDING",
             stage=None,
             progress=0,
-            celery_task_id=celery_task_id,
+            executor_run_id=executor_run_id,
+            parameters_json=parameters_json,
+            retry_of_task_id=retry_of_task_id,
+            retry_count=retry_count,
         )
         self._session.add(task)
         return task
@@ -95,12 +103,12 @@ class TaskRepository:
         task.finished_at = datetime.now(timezone.utc)
         return task
 
-    def set_celery_id(self, task_id: str, celery_task_id: str) -> Task | None:
-        """Bind the Celery-internal task ID after dispatch."""
+    def set_executor_id(self, task_id: str, executor_run_id: str) -> Task | None:
+        """Bind the executor run identifier."""
         task = self.get(task_id)
         if task is None:
             return None
-        task.celery_task_id = celery_task_id
+        task.executor_run_id = executor_run_id
         return task
 
     def increment_retry(self, task_id: str) -> Task | None:

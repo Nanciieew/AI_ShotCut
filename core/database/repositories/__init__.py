@@ -1,5 +1,5 @@
 """
-Synchronous repository layer for Celery worker data access.
+Synchronous repository layer for Workflow/Executor data access.
 
 Each repository wraps a SQLAlchemy Session and provides
 minimal CRUD operations. Callers are responsible for

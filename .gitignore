@@ -52,8 +52,13 @@ model_store/*
 
 # --- Testing ---
 .pytest_cache/
+.tmp*/
 .coverage
 htmlcov/
+*_final_result.json
+
+# --- Local Agent Settings ---
+.claude/settings.local.json
 
 # --- Docker ---
 docker-compose.override.yml

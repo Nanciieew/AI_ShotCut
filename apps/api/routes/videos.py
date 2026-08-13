@@ -1,154 +1,223 @@
-"""
-Video management routes.
+"""Video + Task routes — /api/v1/ per §4.
 
-POST   /api/v1/videos              — Upload a video
-POST   /api/v1/videos/{id}/analyze-shots — Start shot analysis pipeline
-GET    /api/v1/videos/{id}          — Get video metadata
+POST   /api/v1/projects/{project_id}/videos          — Upload video
+POST   /api/v1/videos/{video_id}/tasks               — Create analysis task
+GET    /api/v1/videos/{video_id}                      — Get video metadata
+GET    /api/v1/tasks/{task_id}                        — Get task status
+GET    /api/v1/videos/{video_id}/results              — Get results
 """
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+import hashlib
+import json
+import os
+import re
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.dependencies import get_db
-from apps.api.services.analysis_service import submit_full_pipeline
+from apps.api.services.artifact_service import ArtifactService
+from apps.api.services.task_service import TaskService
+from core.config import get_settings
+from core.database.models import Artifact, ModelRun, Task
+from core.database.models import Video as VideoModel
+from core.database.repositories import VideoRepository
+from core.database.session_sync import get_sync_session
+from core.task_storage import storage_service
+from schemas.task import AnalysisTaskRequest
 
 router = APIRouter(tags=["videos"])
 
+from apps.api.services.executor import BackgroundExecutor
 
-@router.post("/videos")
+_artifact_svc = ArtifactService(storage_service)
+_task_svc = TaskService()
+_executor = BackgroundExecutor(max_workers=2)
+
+# UUID pattern for route validation
+_UUID_RE = re.compile(r"^[a-f0-9]{32}$")
+
+
+def _new_id() -> str:
+    return uuid.uuid4().hex
+
+
+def _container_extension(container_format: str) -> str | None:
+    """Map FFprobe format_name to the canonical stored extension."""
+    formats = {item.strip().lower() for item in container_format.split(",")}
+    if formats.intersection({"mov", "mp4", "m4a", "3gp", "3g2", "mj2"}):
+        return "mp4"
+    if formats.intersection({"matroska", "webm"}):
+        return "mkv"
+    if "avi" in formats:
+        return "avi"
+    return None
+
+
+# ============================================================================
+# Upload
+# ============================================================================
+
+
+@router.post("/projects/{project_id}/videos")
 async def upload_video(
+    project_id: str,
     file: UploadFile = File(...),
-    project_id: str = Form(default="default"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Upload a video file, auto-create project + video records.
+    """Upload a video, create project+video records. Returns video_id."""
+    if not _UUID_RE.match(project_id):
+        raise HTTPException(422, f"Invalid project_id format: {project_id!r}")
 
-    Saves to: data/projects/{project_id}/videos/{video_id}/source/{filename}
-    Returns video_id for subsequent pipeline submission.
-    """
-    import os
-    import uuid
-
-    storage_root = os.getenv("STORAGE_ROOT", "./data")
-    video_id = uuid.uuid4().hex[:12]
+    video_id = _new_id()
     filename = file.filename or "untitled.mp4"
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", filename)
 
-    # Ensure safe filename
-    safe_name = "".join(c for c in filename if c.isalnum() or c in "._- ")
-    if not safe_name.lower().endswith(".mp4"):
-        safe_name += ".mp4"
+    # Stream upload to temp file — compute SHA-256, check size
+    settings = get_settings()
+    max_bytes = settings.upload_max_bytes
 
-    # Auto-create project directory
-    project_dir = os.path.join(storage_root, "projects", project_id)
-    video_dir = os.path.join(project_dir, "videos", video_id, "source")
-    os.makedirs(video_dir, exist_ok=True)
+    source_dir = storage_service.source_dir(project_id, video_id)
+    os.makedirs(source_dir, exist_ok=True)
+    tmp_path = os.path.join(source_dir, safe_name + ".tmp")
 
-    # Save file
-    dest_path = os.path.join(video_dir, safe_name)
-    with open(dest_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
+    h = hashlib.sha256()
+    size = 0
+    try:
+        with open(tmp_path, "wb") as f:
+            while True:
+                chunk = await file.read(65536)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > max_bytes:
+                    f.close()
+                    os.unlink(tmp_path)
+                    raise HTTPException(413, f"File exceeds {max_bytes} bytes")
+                h.update(chunk)
+                f.write(chunk)
+    except HTTPException:
+        raise
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise HTTPException(500, "Upload failed")
 
-    # Build storage URI
-    source_uri = f"storage://projects/{project_id}/videos/{video_id}/source/{safe_name}"
-    file_size = os.path.getsize(dest_path)
+    sha256_digest = h.hexdigest()
 
-    # Create DB records (sync)
-    from core.database.repositories import VideoRepository
-    from core.database.session_sync import get_sync_session
+    # FFprobe: detect real container, reject fake extensions
+    from core.media.ffprobe import run_ffprobe
 
+    try:
+        probe = run_ffprobe(tmp_path)
+    except Exception:
+        os.unlink(tmp_path)
+        raise HTTPException(400, "File is not a valid video")
+
+    real_container = probe.container_format or "unknown"
+    # Determine extension from real container
+    container_ext = _container_extension(real_container)
+    if container_ext is None:
+        os.unlink(tmp_path)
+        raise HTTPException(400, f"Unsupported container: {real_container}")
+    if container_ext not in settings.upload_allowed_containers:
+        os.unlink(tmp_path)
+        raise HTTPException(400, f"Container {real_container} not in allow list")
+
+    # Use true extension
+    final_name = (Path(safe_name).stem or "untitled") + "." + container_ext
+    dest_path = os.path.join(source_dir, final_name)
+
+    # Atomic rename
+    try:
+        os.replace(tmp_path, dest_path)
+    except Exception:
+        os.unlink(tmp_path)
+        raise HTTPException(500, "Upload failed — cannot move file")
+
+    source_uri = f"storage://projects/{project_id}/videos/{video_id}/source/{final_name}"
+
+    # Create DB records only after successful file write
     with get_sync_session() as session:
-        video_repo = VideoRepository(session)
-        video_repo.ensure_project(project_id, name=project_id)
-        video_repo.create(video_id=video_id, project_id=project_id, source_uri=source_uri)
+        repo = VideoRepository(session)
+        repo.ensure_project(project_id)
+        repo.create(video_id=video_id, project_id=project_id, source_uri=source_uri)
         session.commit()
 
     return {
         "video_id": video_id,
         "project_id": project_id,
-        "filename": safe_name,
+        "filename": final_name,
         "source_uri": source_uri,
-        "size_bytes": file_size,
+        "sha256": sha256_digest,
+        "container": real_container,
+        "size_bytes": size,
         "upload_status": "SUCCEEDED",
-        "message": f"Uploaded. Submit pipeline: POST /videos/{video_id}/analyze-shots",
     }
 
 
-@router.post("/videos/{video_id}/analyze-shots")
-async def start_shot_analysis(
+# ============================================================================
+# Create Task
+# ============================================================================
+
+
+@router.post("/videos/{video_id}/tasks")
+async def create_analysis_task(
     video_id: str,
-    video_path: str = Form(default="", description="Path to video file (auto-resolved if empty)"),
-    project_id: str = Form(default="default"),
-    extract_keyframes: bool = Form(default=False),
-    scene_analysis: bool = Form(default=False),
-    shot_model: str = Form(default="ffmpeg_scene"),
-    score_mode: str = Form(default="location_only"),
-    location_w: str = Form(default=""),
-    character_w: str = Form(default=""),
-    plot_w: str = Form(default=""),
-    cut_intensity: str = Form(default="medium"),
-    min_distance_s: int = Form(default=12, ge=5, le=60),
+    parameters: AnalysisTaskRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Start video analysis pipeline.
+    """Create a new analysis task for an existing video. Returns 202."""
+    r = await db.execute(select(VideoModel).where(VideoModel.video_id == video_id))
+    video = r.scalar_one_or_none()
+    if video is None:
+        raise HTTPException(404, f"Video {video_id} not found")
 
-    Pipeline: normalize_video → detect_shots
-      → [extract_keyframes + subtitle.transcribe]
-        → [scene.score_vlm + scene.score_plot]
-          → scene.merge_scores → pipeline_complete
+    from apps.api.services.workflow_service import WorkflowService
 
-    Set scene_analysis=True to enable full scene scoring.
-    score_mode: location_only | character_only | plot_only | custom
-    video_path can be empty — auto-resolved.
-    """
-    # Auto-resolve video_path from uploaded video if empty
-    if not video_path:
-        from sqlalchemy import select
-
-        from core.database.models import Video as VideoModel
-
-        db_result = await db.execute(select(VideoModel).where(VideoModel.video_id == video_id))
-        video_row = db_result.scalar_one_or_none()
-        if video_row is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Video {video_id} not found. Upload first via POST /videos.",
-            )
-        video_path = video_row.source_uri
-        project_id = video_row.project_id or project_id
-
-    result = await submit_full_pipeline(
-        db=db,
-        video_path=video_path,
-        project_id=project_id,
-        extract_keyframes=extract_keyframes,
-        scene_analysis=scene_analysis,
-        score_mode=score_mode,
-        location_weight=int(location_w) if location_w else 1,
-        character_weight=int(character_w) if character_w else 1,
-        plot_weight=int(plot_w) if plot_w else 1,
-        cut_intensity=cut_intensity,
-        min_distance_s=min_distance_s,
+    workflow_parameters = parameters.model_dump()
+    task = _task_svc.create_task(
+        project_id=video.project_id,
+        video_id=video_id,
+        parameters=workflow_parameters,
     )
-    return result
+
+    # Start Workflow via controlled executor
+    wf = WorkflowService(_artifact_svc)
+    _executor.submit(
+        task["task_id"],
+        wf.run_pipeline,
+        project_id=video.project_id,
+        task_id=task["task_id"],
+        video_id=video_id,
+        **workflow_parameters,
+    )
+
+    return {
+        "task_id": task["task_id"],
+        "video_id": task["video_id"],
+        "project_id": task["project_id"],
+        "status": "QUEUED",
+        "stage": "created",
+        "progress": 0,
+    }
+
+
+# ============================================================================
+# Queries
+# ============================================================================
 
 
 @router.get("/videos/{video_id}")
-async def get_video(
-    video_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """Get video metadata and analysis status."""
-    from sqlalchemy import select
-
-    from core.database.models import Video
-
-    result = await db.execute(select(Video).where(Video.video_id == video_id))
-    video = result.scalar_one_or_none()
-
+async def get_video(video_id: str, db: AsyncSession = Depends(get_db)):
+    r = await db.execute(select(VideoModel).where(VideoModel.video_id == video_id))
+    video = r.scalar_one_or_none()
     if video is None:
-        raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
-
+        raise HTTPException(404, f"Video {video_id} not found")
     return {
         "video_id": video.video_id,
         "project_id": video.project_id,
@@ -159,60 +228,71 @@ async def get_video(
         "fps_den": video.fps_den,
         "width": video.width,
         "height": video.height,
-        "created_at": video.created_at.isoformat() if video.created_at else None,
     }
 
 
-@router.get("/videos/{video_id}/keyframes/{shot_id}/{img_name}")
-async def serve_keyframe(
+@router.get("/videos/{video_id}/keyframes/{shot_id}/{image_slot}")
+async def get_shot_keyframe(
     video_id: str,
     shot_id: str,
-    img_name: str,
+    image_slot: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """Serve a keyframe JPEG image from the project's artifacts."""
-    import os
+    """Return a keyframe resolved through the latest successful task Artifact."""
+    if not _UUID_RE.match(video_id) or not _UUID_RE.match(shot_id):
+        raise HTTPException(422, "Invalid video_id or shot_id")
+    position_by_slot = {
+        "img_1": (1, 4),
+        "img_2": (1, 2),
+        "img_3": (3, 4),
+    }
+    position = position_by_slot.get(image_slot)
+    if position is None:
+        raise HTTPException(422, "image_slot must be img_1, img_2, or img_3")
 
-    from fastapi.responses import FileResponse
-    from sqlalchemy import select
-
-    from core.database.models import Video as VideoModel
-
-    db_result = await db.execute(select(VideoModel).where(VideoModel.video_id == video_id))
-    video = db_result.scalar_one_or_none()
-    if video is None:
-        raise HTTPException(404, "Video not found")
-
-    storage_root = os.getenv("STORAGE_ROOT", "./data")
-    project_id = video.project_id or "default"
-    kf_dir = os.path.join(
-        storage_root,
-        "projects",
-        project_id,
-        "videos",
-        video_id,
-        "artifacts",
-        "shot_keyframes",
-        "1.0.0",
+    result = await db.execute(
+        select(Artifact)
+        .join(ModelRun, Artifact.producer_run_id == ModelRun.run_id)
+        .join(Task, ModelRun.task_id == Task.task_id)
+        .where(
+            Artifact.video_id == video_id,
+            Artifact.artifact_type == "shot_keyframes",
+            ModelRun.status == "SUCCEEDED",
+            Task.status == "SUCCEEDED",
+        )
+        .order_by(ModelRun.started_at.desc())
+        .limit(1)
     )
-    img_path = os.path.join(kf_dir, f"{shot_id}_{img_name}.jpg")
+    summary_artifact = result.scalar_one_or_none()
+    if summary_artifact is None:
+        raise HTTPException(404, "No successful keyframe Artifact found")
 
-    # Fallback naming convention
-    if not os.path.exists(img_path):
-        # Try shot_000001_img_1.jpg format
-        alt = os.path.join(kf_dir, f"{shot_id}_{img_name.replace('img_', '_img_')}.jpg")
-        if os.path.exists(alt):
-            img_path = alt
-        else:
-            # Try numeric suffix: img_2 → position 1/2 → _001_002
-            idx = img_name.replace("img_", "")
-            for suffix in [f"001_00{idx}", f"003_00{idx}"]:
-                alt2 = os.path.join(kf_dir, f"{shot_id}_{suffix}.jpg")
-                if os.path.exists(alt2):
-                    img_path = alt2
-                    break
+    try:
+        summary_path = storage_service.resolve_local_path(summary_artifact.uri)
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(500, "Keyframe Artifact is unreadable") from exc
 
-    if not os.path.exists(img_path):
-        raise HTTPException(404, f"Keyframe not found: {shot_id}/{img_name}")
-
-    return FileResponse(img_path, media_type="image/jpeg")
+    shot = next(
+        (item for item in summary.get("shots", []) if item.get("shot_id") == shot_id),
+        None,
+    )
+    if shot is None:
+        raise HTTPException(404, "Shot keyframes not found")
+    sample = next(
+        (
+            item
+            for item in shot.get("samples", [])
+            if (item.get("position_num"), item.get("position_den")) == position and item.get("uri")
+        ),
+        None,
+    )
+    if sample is None:
+        raise HTTPException(404, f"{image_slot} is not available for this shot")
+    try:
+        image_path = storage_service.resolve_local_path(sample["uri"])
+    except ValueError as exc:
+        raise HTTPException(500, "Invalid keyframe URI") from exc
+    if not image_path.is_file() or image_path.stat().st_size == 0:
+        raise HTTPException(404, "Keyframe file missing")
+    return FileResponse(str(image_path), media_type="image/jpeg")

@@ -9,11 +9,15 @@ build/
 # --- Virtual Environments ---
 venv/
 .venv/
+.venv*/
 env/
 
 # --- Git ---
 .git/
 .gitignore
+.env
+.env.*
+!.env.example
 
 # --- IDE ---
 .vscode/
@@ -39,9 +43,17 @@ model-store-volume/
 
 # --- Testing ---
 tests/
+.tmp*/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.nd8_review/
 .coverage
 htmlcov/
+
+# --- Frontend build dependencies ---
+frontend/node_modules/
+frontend/dist/
 
 # --- Docker ---
 docker-compose*.yml

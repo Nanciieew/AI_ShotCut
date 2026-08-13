@@ -26,9 +26,4 @@ class KeyframeExtractionError(MediaError):
 
 
 class NonRetryableTaskError(Exception):
-    """Raised by Celery tasks on non-retryable failures.
-
-    Unlike returning a {"status": "FAILED"} dict (which Celery treats as
-    a successful return and continues the chain), this exception causes
-    Celery to mark the task as FAILURE and stops the chain.
-    """
+    """Raised by Workflow steps when retrying cannot produce a valid result."""

@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 class ArtifactProducer(BaseModel):
     """Identifies the model that produced this artifact."""
 
-    model_name: str = Field(..., description="e.g. omnishotcut, whisper")
+    model_name: str = Field(..., description="e.g. ffmpeg_scene")
     model_version: str = Field(..., description="e.g. 1.0.0, large-v3")
     code_revision: str = Field(
         default="unknown",

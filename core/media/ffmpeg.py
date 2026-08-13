@@ -190,6 +190,35 @@ def validate_proxy_output(
     return errors
 
 
+# ---------------------------------------------------------------------------
+# ASR audio extraction (§4.1)
+# ---------------------------------------------------------------------------
+
+
+def build_asr_audio_command(input_path: str, output_path: str) -> list[str]:
+    """Build FFmpeg command for 16 kHz mono WAV extraction.
+
+    Produces: PCM S16LE, 16000 Hz, 1 channel — per Doubao SeedASR requirements.
+    """
+    return [
+        "ffmpeg",
+        "-hide_banner",
+        "-y",
+        "-i",
+        input_path,
+        "-vn",
+        "-map",
+        "0:a:0",
+        "-acodec",
+        "pcm_s16le",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        output_path,
+    ]
+
+
 def build_keyframe_extract_command(
     video_path: str,
     output_dir: str,

@@ -15,12 +15,12 @@ from typing import Any
 class BaseModelAdapter(ABC):
     """Abstract base for all model adapters.
 
-    Each concrete adapter wraps a specific model (OmniShotCut,
-    Whisper, Scene Boundary, etc.) and enforces the unified
+    Each concrete adapter wraps a specific model (FFmpeg Scene, Doubao ASR,
+    Scene Boundary, etc.) and enforces the unified
     input/output contract defined in 输入输出规范.md.
 
     Attributes:
-        name: Human-readable model identifier (e.g. "omnishotcut").
+        name: Human-readable model identifier (e.g. "ffmpeg_scene").
         version: Pinned model version (e.g. "1.0.0").
     """
 

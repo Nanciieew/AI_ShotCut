@@ -18,3 +18,23 @@ class SubtitleSegment(BaseModel):
     confidence: float | None = Field(
         default=None, ge=0.0, le=1.0, description="ASR confidence [0, 1]"
     )
+
+
+class SubtitleBoundaryContinuity(BaseModel):
+    """Narrative continuity inferred from subtitles at one shot boundary."""
+
+    shot_id: str
+    boundary_index: int = Field(..., ge=0)
+    timestamp_ms: int = Field(..., ge=0)
+    subtitle_continuity: float = Field(..., ge=0.0, le=1.0)
+    discovery_sources: list[str] = Field(default_factory=list)
+    discovery_reasons: list[str] = Field(default_factory=list)
+    reason: str = ""
+
+
+class SubtitleContinuityArtifact(BaseModel):
+    """Canonical output of hierarchical subtitle semantic analysis."""
+
+    video_id: str
+    boundaries: list[SubtitleBoundaryContinuity] = Field(default_factory=list)
+    analysis: dict = Field(default_factory=dict)

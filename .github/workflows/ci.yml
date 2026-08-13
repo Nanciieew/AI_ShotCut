@@ -9,9 +9,6 @@ on:
 env:
   PYTHON_VERSION: "3.11"
   DATABASE_URL: sqlite+aiosqlite:///./data/test_ci.db
-  REDIS_URL: redis://localhost:6379/0
-  CELERY_BROKER_URL: redis://localhost:6379/0
-  CELERY_RESULT_BACKEND: redis://localhost:6379/1
   STORAGE_ROOT: ./data
   MODEL_STORE_ROOT: ./model_store
 
@@ -113,7 +110,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: pip install -r requirements/worker.txt
+        run: pip install -r requirements/api.txt
 
       - name: Create data directory
         run: mkdir -p ./data

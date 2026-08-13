@@ -1,5 +1,5 @@
 """
-Video repository — synchronous CRUD for Celery workers.
+Video repository — synchronous CRUD for Workers and Services.
 """
 
 from sqlalchemy.orm import Session
@@ -8,17 +8,14 @@ from core.database.models import Project, Video
 
 
 class VideoRepository:
-    """Minimal sync repository for Video + Project operations."""
+    """Sync repository for Video + Project operations."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    # ------------------------------------------------------------------
-    # Project
-    # ------------------------------------------------------------------
+    # ---- Project ------------------------------------------------------------
 
     def ensure_project(self, project_id: str, name: str = "default") -> Project:
-        """Get or create a project."""
         proj = self._session.get(Project, project_id)
         if proj is None:
             proj = Project(project_id=project_id, name=name)
@@ -26,21 +23,10 @@ class VideoRepository:
             self._session.flush()
         return proj
 
-    # ------------------------------------------------------------------
-    # Video
-    # ------------------------------------------------------------------
+    # ---- Video --------------------------------------------------------------
 
-    def create(
-        self,
-        video_id: str,
-        project_id: str,
-        source_uri: str | None = None,
-    ) -> Video:
-        video = Video(
-            video_id=video_id,
-            project_id=project_id,
-            source_uri=source_uri,
-        )
+    def create(self, *, video_id: str, project_id: str, source_uri: str | None = None) -> Video:
+        video = Video(video_id=video_id, project_id=project_id, source_uri=source_uri)
         self._session.add(video)
         return video
 
@@ -60,11 +46,9 @@ class VideoRepository:
         normalized_uri: str | None = None,
         audio_uri: str | None = None,
     ) -> Video | None:
-        """Update video technical metadata after normalization."""
         video = self.get(video_id)
         if video is None:
             return None
-
         if duration_ms is not None:
             video.duration_ms = duration_ms
         if fps_num is not None:
@@ -81,5 +65,4 @@ class VideoRepository:
             video.normalized_uri = normalized_uri
         if audio_uri is not None:
             video.audio_uri = audio_uri
-
         return video

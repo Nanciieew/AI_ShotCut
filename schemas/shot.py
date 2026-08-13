@@ -9,7 +9,7 @@ class Shot(BaseModel):
     Time range: [start_ms, end_ms) — includes start, excludes end.
     """
 
-    shot_id: str = Field(..., description="Unique shot identifier, e.g. shot_000001")
+    shot_id: str = Field(..., description="Globally unique 32-character shot identifier")
     video_id: str = Field(..., description="Associated video")
     index: int = Field(..., ge=0, description="Zero-based shot index within the video")
     start_ms: int = Field(..., ge=0, description="Start time in milliseconds")

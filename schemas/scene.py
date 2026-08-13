@@ -42,5 +42,41 @@ class Scene(BaseModel):
         default=None, ge=0.0, le=1.0, description="Scene boundary detection confidence"
     )
     scene_score: float | None = Field(
-        default=None, ge=0.0, le=1.0, description="Computed scene score [0, 1]"
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Confidence that the Scene end is a true boundary. Null for the terminal Scene."
+        ),
     )
+
+
+class SceneBoundary(BaseModel):
+    """A selected boundary closing the Scene identified by scene_id."""
+
+    scene_id: str
+    shot_id: str
+    boundary_index: int = Field(..., ge=0)
+    timestamp_ms: int = Field(..., ge=0)
+    scene_score: float = Field(..., ge=0.0, le=1.0)
+    location_continuity: float | None = Field(default=None, ge=0.0, le=1.0)
+    character_continuity: float | None = Field(default=None, ge=0.0, le=1.0)
+    subtitle_continuity: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class CandidateBoundary(BaseModel):
+    """Persisted score and evidence for every boundary evaluated by one merge run."""
+
+    candidate_id: str
+    video_id: str
+    producer_run_id: str
+    shot_id: str
+    scene_id: str | None = None
+    boundary_index: int = Field(..., ge=0)
+    timestamp_ms: int = Field(..., ge=0)
+    scene_score: float = Field(..., ge=0.0, le=1.0)
+    location_continuity: float | None = Field(default=None, ge=0.0, le=1.0)
+    character_continuity: float | None = Field(default=None, ge=0.0, le=1.0)
+    subtitle_continuity: float | None = Field(default=None, ge=0.0, le=1.0)
+    selected: bool = False
+    selection_rank: int | None = Field(default=None, ge=0)

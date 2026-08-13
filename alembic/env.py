@@ -5,7 +5,6 @@ project's SQLAlchemy Base metadata for autogenerate support.
 """
 
 import asyncio
-import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -22,7 +21,9 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Override sqlalchemy.url from environment variable
-db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/app.db")
+from core.config import get_settings  # noqa: E402
+
+db_url = get_settings().database_url
 config.set_main_option("sqlalchemy.url", db_url)
 
 # Import all models so Base.metadata is populated

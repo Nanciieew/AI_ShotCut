@@ -3,7 +3,7 @@
 
 Usage:
   python scripts/dev/start.py                # start all services
-  python scripts/dev/start.py --api-only     # only API + Redis + Postgres
+  python scripts/dev/start.py --api-only     # only API + Postgres
   python scripts/dev/start.py --stop          # stop all services
 """
 
@@ -28,7 +28,7 @@ def main() -> int:
 
     cmd = ["docker-compose", "up", "-d"]
     if args.api_only:
-        cmd.extend(["api", "redis", "postgres"])
+        cmd.extend(["api", "postgres"])
     else:
         cmd.append("--build")
 

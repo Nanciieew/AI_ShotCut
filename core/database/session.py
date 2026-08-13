@@ -5,14 +5,11 @@ Supports SQLite (development) and PostgreSQL (production) switching
 via the DATABASE_URL environment variable.
 """
 
-import os
-
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite+aiosqlite:///./data/app.db",
-)
+from core.config import get_settings
+
+DATABASE_URL = get_settings().database_url
 
 _engine = create_async_engine(DATABASE_URL, echo=False)
 

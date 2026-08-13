@@ -1,4 +1,6 @@
-"""VLM Scene Boundary Detection — Qwen2.5-VL.
+"""Shared VLM utilities — prompts + DeepSeek LLM provider.
 
-Adapter: VLMSceneBoundaryAdapter — location + character via Qwen2.5-VL.
+Used by models/doubao_vision and other provider-backed semantic adapters.
+The old Qwen VL adapter (VLMSceneBoundaryAdapter) has been replaced by
+DoubaoVisionAdapter (models/doubao_vision).
 """

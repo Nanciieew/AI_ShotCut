@@ -33,12 +33,9 @@ def test_nvidia_smi_check_exists():
     assert nvsmi["status"] in ("PASS", "WARNING", "NOT_INSTALLED")
 
 
-def test_redis_db_config_no_secrets():
-    """Redis/DB checks must not expose full connection strings."""
+def test_db_config_no_secrets():
+    """Database checks must not expose full connection strings."""
     results = collect_executable_info()
-    redis_check = next(c for c in results if c["check"] == "redis_configured")
     db_check = next(c for c in results if c["check"] == "database_configured")
-    # Only booleans / types, never raw URLs
-    assert isinstance(redis_check["value"], bool)
     assert isinstance(db_check["value"], str)  # "sqlite" or "postgresql" or "unknown"
     assert "://" not in str(db_check["value"])

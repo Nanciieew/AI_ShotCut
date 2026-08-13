@@ -1,26 +1,17 @@
-"""
-Synchronous database session for Celery workers.
+"""Synchronous database session for the in-process Workflow/Executor."""
 
-Celery tasks are plain def functions (not async), so they
-cannot use the async session factory from core.database.session.
-This module provides a synchronous alternative via SQLAlchemy's
-synchronous engine + sessionmaker.
-"""
-
-import os
 from collections.abc import Generator
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from core.config import get_settings
+
 # Derive a sync URL from the async DATABASE_URL.
 # For SQLite:  sqlite+aiosqlite:///./data/app.db  →  sqlite:///./data/app.db
 # For PostgreSQL: postgresql+asyncpg://...  →  postgresql://...
-DATABASE_URL_ASYNC = os.getenv(
-    "DATABASE_URL",
-    "sqlite+aiosqlite:///./data/app.db",
-)
+DATABASE_URL_ASYNC = get_settings().database_url
 
 DATABASE_URL_SYNC = DATABASE_URL_ASYNC.replace("+aiosqlite", "").replace("+asyncpg", "+psycopg2")
 
@@ -41,7 +32,7 @@ SyncSessionFactory = sessionmaker(
 def get_sync_session() -> Generator[Session, None, None]:
     """Yield a synchronous SQLAlchemy Session.
 
-    Usage in Celery tasks::
+    Usage in Workflow steps::
 
         from core.database.session_sync import get_sync_session
 
