@@ -159,14 +159,35 @@ class DoubaoVisionAdapter(BaseModelAdapter):
                 for attempt in range(1, max_attempts + 1):
                     resp = provider.send(messages)
                     scores = resp.get("data", {}).get("scores", [])
-                    returned_ids = [str(item.get("shot_id", "")) for item in scores]
-                    if (
-                        len(scores) == len(expected_ids)
-                        and returned_ids == expected_ids
-                        and len(returned_ids) == len(set(returned_ids))
-                    ):
-                        return scores
+                    # Batches are intentionally fixed to one boundary. The model's
+                    # echoed UUID is untrusted metadata and may contain formatting
+                    # drift, so bind the single response to the request-side ID.
+                    if isinstance(scores, list) and len(scores) == 1:
+                        score = scores[0]
+                        if isinstance(score, dict):
+                            try:
+                                location = float(score["location_change"])
+                                character = float(score["character_group_change"])
+                            except (KeyError, TypeError, ValueError):
+                                pass
+                            else:
+                                if 0.0 <= location <= 100.0 and 0.0 <= character <= 100.0:
+                                    return [
+                                        {
+                                            **score,
+                                            "shot_id": expected_ids[0],
+                                            "location_change": location,
+                                            "character_group_change": character,
+                                        }
+                                    ]
+                    returned_ids = (
+                        [str(item.get("shot_id", "")) for item in scores]
+                        if isinstance(scores, list)
+                        else []
+                    )
                     last_problem = (
+                        f"expected_count=1, returned_count="
+                        f"{len(scores) if isinstance(scores, list) else 'invalid'}, "
                         f"expected_ids={expected_ids}, returned_ids={returned_ids}, "
                         f"attempt={attempt}/{max_attempts}"
                     )

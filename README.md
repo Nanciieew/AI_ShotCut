@@ -28,13 +28,25 @@ upload → normalize(video.mp4, audio.wav) → detect shots → keyframes
 cp .env.example .env
 pip install -r requirements/api.txt
 alembic upgrade head
-uvicorn apps.api.main:app --reload
+uvicorn apps.api.main:app --reload --port 8080
 ```
 
-Docker 开发环境会启动 PostgreSQL、迁移、Provider/ngrok（当配置启用）和 API：
+Windows 开发环境默认在本机运行 FastAPI，Docker 只启动 PostgreSQL、迁移、Provider 和 ngrok：
 
 ```bash
-docker compose up --build
+python scripts/dev/start.py
+```
+
+停止全部项目服务：
+
+```bash
+python scripts/dev/stop.py
+```
+
+仅在专门测试容器化 API 时启用 `container-api` profile：
+
+```bash
+docker-compose --profile container-api up api
 ```
 
 ## API

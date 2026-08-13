@@ -1,69 +1,70 @@
 <script setup>
-import { ref } from 'vue'
-const props = defineProps({ phase: String, filename: String })
+import { computed, ref } from 'vue'
+
+const props = defineProps({ uploadConfig: Object })
 const emit = defineEmits(['uploaded'])
-const showModal = ref(true)
-const dragging = ref(false)
+const input = ref(null)
 const file = ref(null)
+const dragging = ref(false)
 const uploading = ref(false)
-const msg = ref('')
+const error = ref('')
+
+const extensions = computed(() => props.uploadConfig?.allowed_containers || ['mp4', 'mov', 'mkv', 'avi'])
+const accept = computed(() => extensions.value.map(value => `.${value}`).join(','))
+const maxLabel = computed(() => `${Math.round((props.uploadConfig?.max_bytes || 2_000_000_000) / 1_000_000_000)} GB`)
+const fileSize = computed(() => file.value ? `${(file.value.size / 1_000_000).toFixed(1)} MB` : '')
+
+function choose(candidate) {
+  if (!candidate) return
+  const extension = candidate.name.split('.').pop().toLowerCase()
+  if (!extensions.value.includes(extension)) {
+    error.value = `不支持 .${extension}；支持 ${extensions.value.map(value => `.${value}`).join('、')}`
+    return
+  }
+  file.value = candidate
+  error.value = ''
+}
 
 async function upload() {
-  if (!file.value) return
-  uploading.value = true; msg.value = 'Uploading...'
-  const form = new FormData()
-  form.append('file', file.value)
+  if (!file.value || !props.uploadConfig?.project_id) return
+  uploading.value = true
+  error.value = ''
   try {
-    const r = await fetch('/api/v1/videos', { method: 'POST', body: form })
-    const d = await r.json()
-    if (d.video_id) { emit('uploaded', d); showModal.value = false }
-    else msg.value = 'Failed'
-  } catch(e) { msg.value = 'Network error — is the server running?' }
-  uploading.value = false
+    const form = new FormData()
+    form.append('file', file.value)
+    const response = await fetch(`/api/v1/projects/${props.uploadConfig.project_id}/videos`, { method: 'POST', body: form })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(payload.detail || '上传失败')
+    emit('uploaded', payload)
+  } catch (reason) {
+    error.value = reason.message
+  } finally {
+    uploading.value = false
+  }
 }
-function onDrop(e) { e.preventDefault(); dragging.value = false; handle(e.dataTransfer.files[0]) }
-function handle(f) { if (!f || !f.name.toLowerCase().endsWith('.mp4')) { msg.value = 'Only .mp4 files'; return } file.value = f; msg.value = '' }
-const fmt = (s) => s ? (s/1e6).toFixed(1)+' MB' : ''
 </script>
 
 <template>
-  <div class="overlay" v-if="showModal">
-    <div class="modal">
-      <h2>Upload Video</h2>
-      <div class="drop" :class="{ drag: dragging }" @dragover.prevent="dragging=true"
-           @dragleave="dragging=false" @drop="onDrop" @click="$refs.finput.click()">
-        <div class="drop-icon">📁</div>
-        <p v-if="!file">Click or drag & drop your video</p>
-        <p v-else class="file-name">{{ file.name }}<br><span class="sz">{{ fmt(file.size) }}</span></p>
-        <p class="hint">Supports .mp4 up to 2GB</p>
-      </div>
-      <input ref="finput" type="file" accept="video/mp4" hidden @change="handle($event.target.files[0])" />
-      <button class="btn" :disabled="!file || uploading" @click="upload">
-        {{ uploading ? 'Uploading...' : 'Confirm Upload' }}
-      </button>
-      <p class="msg" :class="{err: msg.includes('Failed')||msg.includes('error')}">{{ msg }}</p>
+  <section class="upload-card">
+    <div class="upload-copy"><span class="step">01</span><h2>上传视频</h2><p>视频会保存至当前项目的受控存储空间，浏览器不会直接指定服务器文件路径。</p></div>
+    <div class="dropzone" :class="{ dragging, selected:file }" @click="input?.click()"
+      @dragover.prevent="dragging=true" @dragleave="dragging=false" @drop.prevent="dragging=false; choose($event.dataTransfer.files[0])">
+      <div class="upload-icon">↑</div>
+      <strong>{{ file ? file.name : '选择或拖入视频文件' }}</strong>
+      <span v-if="file">{{ fileSize }}</span>
+      <span v-else>支持 {{ extensions.map(value => `.${value}`).join(' / ') }}，最大 {{ maxLabel }}</span>
+      <input ref="input" type="file" :accept="accept" hidden @change="choose($event.target.files[0])">
     </div>
-  </div>
+    <p class="hint">建议先压缩至 <b>720p 或以下</b> 再上传，可显著缩短处理与上传时间。</p>
+    <p v-if="error" class="error">{{ error }}</p>
+    <button class="primary" :disabled="!file || uploading || !uploadConfig" @click="upload">{{ uploading ? '正在上传…' : '上传视频并继续' }} <span>→</span></button>
+  </section>
 </template>
 
 <style scoped>
-.overlay { position: fixed; inset: 0; background: #00000080; display: flex;
-  align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
-.modal { background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
-  padding: 36px; width: 480px; max-width: 90vw; text-align: center; }
-h2 { font-size: 1.2rem; color: var(--accent); margin-bottom: 24px; }
-.drop { border: 2px dashed var(--border); border-radius: 12px; padding: 48px 24px;
-  cursor: pointer; transition: .2s; margin-bottom: 16px; }
-.drop:hover, .drop.drag { border-color: var(--accent); background: #6c8cff08; }
-.drop-icon { font-size: 2.5rem; margin-bottom: 12px; }
-.drop p { color: var(--muted); }
-.file-name { color: var(--text) !important; font-weight: 600; }
-.sz { font-weight: 400; font-size: 0.8rem; }
-.hint { font-size: 0.75rem; margin-top: 8px; }
-.btn { padding: 12px 32px; border: none; border-radius: 8px; font-size: 0.95rem;
-  font-weight: 600; cursor: pointer; background: linear-gradient(135deg, #6c8cff, #a78bfa);
-  color: #fff; width: 100%; transition: .2s; }
-.btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.msg { color: var(--muted); margin-top: 12px; font-size: 0.85rem; }
-.msg.err { color: var(--danger); }
+.upload-card { display:grid; grid-template-columns:1fr 1.4fr; gap:26px; padding:30px; background:var(--paper); border:1px solid var(--line); border-radius:18px; box-shadow:0 18px 40px #15213b0b; }
+.step { color:var(--blue); font-size:.78rem; font-weight:800; }.upload-copy h2 { margin:8px 0 12px; font-size:1.5rem; letter-spacing:-.04em; }.upload-copy p,.hint { color:var(--muted); font-size:.88rem; line-height:1.65; }
+.dropzone { min-height:185px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:18px; border:1.5px dashed #afbdd0; border-radius:14px; cursor:pointer; text-align:center; transition:.2s; }.dropzone:hover,.dropzone.dragging,.dropzone.selected { border-color:var(--blue); background:#f5f8ff; }.dropzone strong { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.dropzone span { color:var(--muted); font-size:.78rem; }.upload-icon { display:grid; place-items:center; width:38px; height:38px; border-radius:50%; background:#e7efff; color:var(--blue); font-size:1.3rem; font-weight:700; }
+.hint { grid-column:1/-1; margin:0; }.hint b { color:var(--ink); }.error { grid-column:1/-1; margin:0; color:var(--red); font-size:.85rem; }.primary { grid-column:1/-1; display:flex; align-items:center; justify-content:center; gap:12px; min-height:48px; border:0; border-radius:9px; background:var(--blue); color:#fff; cursor:pointer; font-weight:750; transition:.2s; }.primary:hover { background:var(--blue-dark); }.primary:disabled { cursor:not-allowed; opacity:.45; }.primary span { font-size:1.2rem; }
+@media (max-width:650px) { .upload-card { grid-template-columns:1fr; padding:20px; } }
 </style>

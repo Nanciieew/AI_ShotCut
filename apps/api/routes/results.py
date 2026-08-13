@@ -4,7 +4,7 @@ Result query routes.
 GET /api/v1/videos/{video_id}/results — Get analysis results for a video
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.dependencies import get_db
@@ -16,6 +16,7 @@ router = APIRouter(tags=["results"])
 @router.get("/videos/{video_id}/results")
 async def get_results(
     video_id: str,
+    task_id: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
     """Get the full analysis results for a video.
@@ -23,7 +24,7 @@ async def get_results(
     Returns video metadata, shot list, artifact references, and
     current pipeline status. If still running, status reflects progress.
     """
-    result = await _task_svc.get_video_results(video_id, db)
+    result = await _task_svc.get_video_results(video_id, db, task_id=task_id)
     if result.get("status") == "NOT_FOUND":
         raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
     return result

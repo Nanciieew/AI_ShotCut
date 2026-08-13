@@ -1,112 +1,46 @@
 <script setup>
-const purpose = defineModel('purpose', { default: 'scene_segmentation' })
-const shotModel = defineModel('shotModel', { default: 'ffmpeg_scene' })
-const scoreMode = defineModel('scoreMode', { default: 'location_only' })
-const intensity = defineModel('intensity', { default: 'medium' })
-const minDist = defineModel('minDist', { default: 12 })
-const customW = defineModel('customW', { default: () => ({ L:5, C:3, S:2 }) })
+const scoreMode = defineModel('scoreMode')
+const weights = defineModel('weights')
+const cutIntensity = defineModel('cutIntensity')
+const minDistance = defineModel('minDistance')
+defineProps({ canStart: Boolean })
 const emit = defineEmits(['start'])
 
-const purposes = [
-  { key:'scene_segmentation', label:'Scene Segmentation', desc:'Full pipeline: shot detection + VLM + LLM → scene cuts', icon:'🎬' },
-  { key:'edit_suggestion', label:'Edit Suggestion', desc:'Scene segmentation + EEG-ready output for editing', icon:'✂️' },
-  { key:'shot_detection', label:'Shot Detection', desc:'Shot boundaries only (no scene scoring)', icon:'🔍' },
-]
-const isScene = () => purpose.value !== 'shot_detection'
 const modes = [
-  { key:'location_only', label:'Scene Only' },
-  { key:'character_only', label:'Character Only' },
-  { key:'subtitle_only', label:'Story Only' },
-  { key:'custom', label:'Customize' },
+  { key: 'location_only', title: '按场景', subtitle: '根据地点、画面环境与空间变化分段', token: 'location_only' },
+  { key: 'character_only', title: '按人物', subtitle: '根据人物组合与主要角色变化分段', token: 'character_only' },
+  { key: 'subtitle_only', title: '按情节', subtitle: '根据字幕语义与故事转折分段', token: 'subtitle_only' },
+  { key: 'custom', title: '自定义', subtitle: '按场景、人物、情节三类证据组合评分', token: 'custom' },
 ]
-const intensityLabels = { high:'High', medium:'Medium', low:'Low' }
 </script>
 
 <template>
-  <div class="card">
-    <h2>Analysis Settings</h2>
-
-    <p class="sec-label">Purpose</p>
-    <div class="purpose-grid">
-      <div v-for="p in purposes" :key="p.key" class="purpose-card"
-           :class="{active: purpose===p.key}" @click="purpose=p.key">
-        <span class="p-icon">{{ p.icon }}</span>
-        <span class="p-label">{{ p.label }}</span>
-        <span class="p-desc">{{ p.desc }}</span>
-      </div>
+  <div class="config-card">
+    <div class="mode-grid">
+      <button v-for="(mode, index) in modes" :key="mode.key" class="mode" :class="{ selected:scoreMode === mode.key }" @click="scoreMode = mode.key">
+        <span class="mode-index">0{{ index + 1 }}</span><strong>{{ mode.title }}</strong><small>{{ mode.subtitle }}</small><code>{{ mode.token }}</code>
+      </button>
     </div>
 
-    <p class="sec-label">Shot Detection Model</p>
-    <div class="row">
-      <select v-model="shotModel">
-        <option value="ffmpeg_scene">FFmpeg Scene Filter (fast, any length)</option>
-      </select>
-    </div>
+    <section v-if="scoreMode === 'custom'" class="weights">
+      <div><h2>自定义证据权重</h2><p>权重会由后端按总和归一化；三个值不能同时为 0。</p></div>
+      <label>场景 <input v-model.number="weights.location" type="range" min="0" max="10"><b>{{ weights.location }}</b></label>
+      <label>人物 <input v-model.number="weights.character" type="range" min="0" max="10"><b>{{ weights.character }}</b></label>
+      <label>情节 <input v-model.number="weights.subtitle" type="range" min="0" max="10"><b>{{ weights.subtitle }}</b></label>
+      <p v-if="!canStart" class="weight-error">请至少保留一个大于 0 的权重。</p>
+    </section>
 
-    <div v-if="isScene()">
-      <p class="sec-label">Scene Scoring</p>
-      <div class="tabs">
-        <span v-for="m in modes" :key="m.key" class="tab" :class="{active:scoreMode===m.key}"
-              @click="scoreMode=m.key">{{ m.label }}</span>
-      </div>
-      <div v-if="scoreMode==='custom'" class="sliders">
-        <label>Scene / Location <input type="range" min="0" max="10" v-model.number="customW.L"><b>{{ customW.L }}</b>/10</label>
-        <label>Character <input type="range" min="0" max="10" v-model.number="customW.C"><b>{{ customW.C }}</b>/10</label>
-        <label>Story transition <input type="range" min="0" max="10" v-model.number="customW.S"><b>{{ customW.S }}</b>/10</label>
-        <p v-if="customW.L + customW.C + customW.S === 0" class="weight-error">At least one weight must be greater than 0.</p>
-      </div>
-
-      <p class="sec-label">Cut Intensity</p>
-      <div class="intensity-row">
-        <button v-for="(l,k) in intensityLabels" :key="k" class="int-btn"
-                :class="{active: intensity===k}" @click="intensity=k">{{ l }}</button>
-      </div>
-      <p class="hint">Higher intensity → more scene cuts. Low(1% shots) · Medium(4%) · High(6%)</p>
-    </div>
-
-    <button class="btn ready"
-            :disabled="scoreMode==='custom' && customW.L + customW.C + customW.S === 0"
-            @click="emit('start')">Start Analysis</button>
+    <section class="advanced">
+      <label>切分密度<select v-model="cutIntensity"><option value="low">低 · 更少切点</option><option value="medium">中 · 推荐</option><option value="high">高 · 更多切点</option></select></label>
+      <label>最小间隔<select v-model.number="minDistance"><option :value="8">8 秒</option><option :value="12">12 秒</option><option :value="20">20 秒</option></select></label>
+    </section>
+    <button class="start" :disabled="!canStart" @click="emit('start')">开始分析 <span>→</span></button>
   </div>
 </template>
 
 <style scoped>
-.card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
-h2 { font-size: 1rem; color: var(--accent); margin-bottom: 16px; }
-.sec-label { color: var(--muted); font-size: 0.75rem; text-transform: uppercase;
-  letter-spacing: 0.5px; margin: 16px 0 8px; }
-.purpose-grid { display: grid; gap: 8px; }
-.purpose-card { display: grid; grid-template-columns: 32px 1fr; grid-template-rows: auto auto;
-  gap: 2px 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px;
-  cursor: pointer; transition: .2s; }
-.purpose-card:hover { border-color: var(--accent); }
-.purpose-card.active { border-color: var(--accent); background: #6c8cff0d; }
-.p-icon { grid-row: 1/3; font-size: 1.3rem; align-self: center; }
-.p-label { font-size: 0.9rem; font-weight: 600; }
-.p-desc { font-size: 0.75rem; color: var(--muted); }
-.row { margin-top: 8px; }
-select { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text);
-  padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; outline: none; }
-.tabs { display: flex; gap: 4px; margin-top: 8px; }
-.tab { padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem;
-  color: var(--muted); border: 1px solid transparent; transition: .2s; user-select: none; }
-.tab.active { color: var(--accent); border-color: var(--accent); background: #6c8cff0d; }
-.sliders { margin-top: 8px; }
-.sliders label { display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
-  color: var(--muted); font-size: 0.8rem; }
-.sliders input[type=range] { flex: 1; accent-color: var(--accent); }
-.sliders b { color: var(--accent); min-width: 20px; }
-.weight-error { color: var(--danger); font-size: 0.75rem; margin-top: 6px; }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; animation: none; }
-.intensity-row { display: flex; gap: 6px; margin-top: 8px; }
-.int-btn { flex: 1; padding: 8px 0; border: 1px solid var(--border); border-radius: 6px;
-  background: transparent; color: var(--muted); cursor: pointer; font-size: 0.85rem; transition: .2s; }
-.int-btn.active { border-color: var(--accent); color: var(--accent); background: #6c8cff0d; }
-.hint { color: var(--muted); font-size: 0.72rem; margin-top: 6px; }
-.btn { margin-top: 20px; padding: 12px 28px; border: none; border-radius: 8px; font-size: 0.95rem;
-  font-weight: 600; cursor: pointer; background: linear-gradient(135deg, #6c8cff, #a78bfa);
-  color: #fff; width: 100%; }
-.btn.ready { animation: pulse 2s infinite; }
-@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 #6c8cff40; }
-  50% { box-shadow: 0 0 0 12px #6c8cff00; } }
+.config-card { padding:28px; background:var(--paper); border:1px solid var(--line); border-radius:18px; box-shadow:0 18px 40px #15213b0b; }.mode-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }.mode { position:relative; min-height:155px; padding:18px; overflow:hidden; border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--ink); cursor:pointer; text-align:left; transition:.18s; }.mode:hover { border-color:#9db8f4; transform:translateY(-1px); }.mode.selected { border:2px solid var(--blue); background:#f5f8ff; }.mode-index { display:block; margin-bottom:18px; color:var(--blue); font-family:ui-monospace,monospace; font-size:.7rem; font-weight:800; }.mode strong { display:block; font-size:1.05rem; }.mode small { display:block; min-height:32px; margin-top:8px; color:var(--muted); font-size:.78rem; line-height:1.4; }.mode code { position:absolute; right:12px; bottom:10px; color:#8290a7; font-size:.66rem; }
+.weights { display:grid; grid-template-columns:1fr; gap:13px; margin-top:22px; padding:20px; border-radius:12px; background:#f7f9fc; }.weights h2 { margin:0 0 4px; font-size:1rem; }.weights p { margin:0; color:var(--muted); font-size:.8rem; }.weights label { display:grid; grid-template-columns:45px 1fr 28px; gap:12px; align-items:center; font-size:.88rem; }.weights input { accent-color:var(--blue); }.weights b { color:var(--blue); text-align:right; }.weight-error { color:var(--red)!important; }
+.advanced { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:22px 0; }.advanced label { display:grid; gap:7px; color:var(--muted); font-size:.78rem; }.advanced select { padding:10px 11px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink); }.start { width:100%; min-height:50px; border:0; border-radius:9px; background:var(--blue); color:#fff; cursor:pointer; font-weight:750; }.start span { margin-left:10px; font-size:1.2rem; }.start:disabled { cursor:not-allowed; opacity:.45; }
+@media (max-width:600px) { .mode-grid,.advanced { grid-template-columns:1fr; } }
 </style>

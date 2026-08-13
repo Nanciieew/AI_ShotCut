@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.dependencies import get_db
-from core.database.models import Artifact, ModelRun, ModelRunOutput
+from core.database.models import Artifact, ModelRun, ModelRunOutput, Task
 from core.security.artifact_tokens import verify_token
 from core.task_storage import storage_service
 
@@ -75,6 +75,43 @@ async def download_artifact(
 # ============================================================================
 # Task-scoped artifact listing
 # ============================================================================
+
+
+@router.get("/tasks/{task_id}/final-result/download")
+async def download_final_result(task_id: str, db: AsyncSession = Depends(get_db)):
+    """Download the immutable FinalResult JSON generated for one Task."""
+    task_result = await db.execute(select(Task).where(Task.task_id == task_id))
+    task = task_result.scalar_one_or_none()
+    if task is None:
+        raise HTTPException(404, "Task not found")
+    if task.status != "SUCCEEDED":
+        raise HTTPException(409, f"Task is {task.status}; final result is unavailable")
+
+    artifact_result = await db.execute(
+        select(Artifact)
+        .join(ModelRun, Artifact.producer_run_id == ModelRun.run_id)
+        .where(
+            ModelRun.task_id == task_id,
+            Artifact.artifact_type == "final_scenes",
+        )
+        .order_by(Artifact.created_at.desc())
+        .limit(1)
+    )
+    artifact = artifact_result.scalar_one_or_none()
+    if artifact is None:
+        raise HTTPException(404, "Final result Artifact not found")
+    try:
+        path = storage_service.resolve_local_path(artifact.uri)
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid final result URI") from exc
+    if not path.is_file() or path.stat().st_size == 0:
+        raise HTTPException(404, "Final result file is missing")
+
+    return FileResponse(
+        str(path),
+        media_type="application/json",
+        filename=f"final_result_{task_id}.json",
+    )
 
 
 @router.get("/tasks/{task_id}/artifacts")

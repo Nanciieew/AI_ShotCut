@@ -15,7 +15,7 @@ services:
     image: postgres:16-alpine
     container_name: movie-postgres
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -50,12 +50,18 @@ services:
 
   # --- FastAPI Application ---
   api:
+    # Windows development runs FastAPI natively to avoid Docker Desktop/WSL
+    # port-forwarding failures during large uploads. Opt in explicitly with:
+    # docker-compose --profile container-api up api
+    profiles: ["container-api"]
     build:
       context: .
       dockerfile: docker/api.Dockerfile
     container_name: movie-api
     ports:
-      - "8000:8000"
+      # Bind explicitly to loopback. Wildcard publishing on port 8000 can
+      # conflict with WSL's localhost relay on Windows.
+      - "127.0.0.1:${API_PORT:-8080}:8000"
     env_file:
       - .env
     environment:

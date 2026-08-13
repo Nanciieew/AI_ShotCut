@@ -80,8 +80,12 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # API
     # ------------------------------------------------------------------
-    api_host: str = Field(default="0.0.0.0", description="API server host.")
-    api_port: int = Field(default=8000, ge=1, le=65535, description="API server port.")
+    api_host: str = Field(default="127.0.0.1", description="API server host.")
+    api_port: int = Field(default=8080, ge=1, le=65535, description="API server port.")
+    default_project_id: str = Field(
+        default="00000000000000000000000000000000",
+        description="Project used by the single-project web upload experience.",
+    )
 
     # ------------------------------------------------------------------
     # VLM / LLM API

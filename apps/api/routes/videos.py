@@ -63,6 +63,19 @@ def _container_extension(container_format: str) -> str | None:
 # ============================================================================
 
 
+@router.get("/upload-config")
+async def get_upload_config():
+    """Return the constrained upload contract for the web client."""
+    settings = get_settings()
+    return {
+        "project_id": settings.default_project_id,
+        "allowed_containers": settings.upload_allowed_containers,
+        "max_bytes": settings.upload_max_bytes,
+        "storage_template": "storage://projects/{project_id}/videos/{video_id}/source/{filename}",
+        "recommended_max_height": 720,
+    }
+
+
 @router.post("/projects/{project_id}/videos")
 async def upload_video(
     project_id: str,

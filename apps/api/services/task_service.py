@@ -83,18 +83,16 @@ class TaskService:
             "error_message": task.error_message,
         }
 
-    async def get_video_results(self, video_id: str, db) -> dict:
+    async def get_video_results(self, video_id: str, db, task_id: str | None = None) -> dict:
         r = await db.execute(select(Video).where(Video.video_id == video_id))
         video = r.scalar_one_or_none()
         if video is None:
             return {"video_id": video_id, "status": "NOT_FOUND"}
 
-        r = await db.execute(
-            select(Task)
-            .where(Task.video_id == video_id, Task.status == "SUCCEEDED")
-            .order_by(Task.created_at.desc())
-            .limit(1)
-        )
+        task_query = select(Task).where(Task.video_id == video_id, Task.status == "SUCCEEDED")
+        if task_id:
+            task_query = task_query.where(Task.task_id == task_id)
+        r = await db.execute(task_query.order_by(Task.created_at.desc()).limit(1))
         task = r.scalar_one_or_none()
         if task is None:
             return {
