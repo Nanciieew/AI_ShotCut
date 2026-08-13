@@ -1,10 +1,10 @@
 <script setup>
 const purpose = defineModel('purpose', { default: 'scene_segmentation' })
 const shotModel = defineModel('shotModel', { default: 'ffmpeg_scene' })
-const scoreMode = defineModel('scoreMode', { default: 'weighted' })
+const scoreMode = defineModel('scoreMode', { default: 'location_only' })
 const intensity = defineModel('intensity', { default: 'medium' })
 const minDist = defineModel('minDist', { default: 12 })
-const customW = defineModel('customW', { default: () => ({ L:5, C:3, P:2 }) })
+const customW = defineModel('customW', { default: () => ({ L:5, C:3, S:2 }) })
 const emit = defineEmits(['start'])
 
 const purposes = [
@@ -14,8 +14,10 @@ const purposes = [
 ]
 const isScene = () => purpose.value !== 'shot_detection'
 const modes = [
-  { key:'location_only', label:'Location' },
-  { key:'character_only', label:'Character' }, { key:'plot_only', label:'Plot' }, { key:'custom', label:'Custom' },
+  { key:'location_only', label:'Scene Only' },
+  { key:'character_only', label:'Character Only' },
+  { key:'subtitle_only', label:'Story Only' },
+  { key:'custom', label:'Customize' },
 ]
 const intensityLabels = { high:'High', medium:'Medium', low:'Low' }
 </script>
@@ -38,7 +40,6 @@ const intensityLabels = { high:'High', medium:'Medium', low:'Low' }
     <div class="row">
       <select v-model="shotModel">
         <option value="ffmpeg_scene">FFmpeg Scene Filter (fast, any length)</option>
-        <option value="omnishotcut">OmniShotCut (precise, ≤10min video)</option>
       </select>
     </div>
 
@@ -49,9 +50,10 @@ const intensityLabels = { high:'High', medium:'Medium', low:'Low' }
               @click="scoreMode=m.key">{{ m.label }}</span>
       </div>
       <div v-if="scoreMode==='custom'" class="sliders">
-        <label>Location <input type="range" min="1" max="10" v-model.number="customW.L"><b>{{ customW.L }}</b>/10</label>
-        <label>Character <input type="range" min="1" max="10" v-model.number="customW.C"><b>{{ customW.C }}</b>/10</label>
-        <label>Plot <input type="range" min="1" max="10" v-model.number="customW.P"><b>{{ customW.P }}</b>/10</label>
+        <label>Scene / Location <input type="range" min="0" max="10" v-model.number="customW.L"><b>{{ customW.L }}</b>/10</label>
+        <label>Character <input type="range" min="0" max="10" v-model.number="customW.C"><b>{{ customW.C }}</b>/10</label>
+        <label>Story transition <input type="range" min="0" max="10" v-model.number="customW.S"><b>{{ customW.S }}</b>/10</label>
+        <p v-if="customW.L + customW.C + customW.S === 0" class="weight-error">At least one weight must be greater than 0.</p>
       </div>
 
       <p class="sec-label">Cut Intensity</p>
@@ -62,7 +64,9 @@ const intensityLabels = { high:'High', medium:'Medium', low:'Low' }
       <p class="hint">Higher intensity → more scene cuts. Low(1% shots) · Medium(4%) · High(6%)</p>
     </div>
 
-    <button class="btn ready" @click="emit('start')">Start Analysis</button>
+    <button class="btn ready"
+            :disabled="scoreMode==='custom' && customW.L + customW.C + customW.S === 0"
+            @click="emit('start')">Start Analysis</button>
   </div>
 </template>
 
@@ -92,6 +96,8 @@ select { width: 100%; background: var(--bg); border: 1px solid var(--border); co
   color: var(--muted); font-size: 0.8rem; }
 .sliders input[type=range] { flex: 1; accent-color: var(--accent); }
 .sliders b { color: var(--accent); min-width: 20px; }
+.weight-error { color: var(--danger); font-size: 0.75rem; margin-top: 6px; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; animation: none; }
 .intensity-row { display: flex; gap: 6px; margin-top: 8px; }
 .int-btn { flex: 1; padding: 8px 0; border: 1px solid var(--border); border-radius: 6px;
   background: transparent; color: var(--muted); cursor: pointer; font-size: 0.85rem; transition: .2s; }

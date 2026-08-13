@@ -24,7 +24,7 @@ const activeIdx = computed(() => {
   if (s.includes('detect_shots')||s.includes('shot')) return 1
   if (s.includes('keyframe')||s.includes('extract')) return 2
   if (s.includes('transcribe')||s.includes('subtitle')) return 3
-  if (s.includes('vlm')||s.includes('plot')||s.includes('score')) return 4
+  if (s.includes('vlm')||s.includes('subtitle_semantic')||s.includes('score')) return 4
   if (s.includes('merge')||s.includes('complete')) return steps.value.length - 1
   return props.progress >= 100 ? steps.value.length : 0
 })

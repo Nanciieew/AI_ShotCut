@@ -7,7 +7,7 @@ function msStr(ms) {
   return m + ':' + s.padStart(4, '0')
 }
 
-const scenes = () => props.results?.final_scenes || []
+const scenes = () => props.results?.scenes || []
 const boundaries = () => props.results?.candidate_boundaries || []
 </script>
 
@@ -18,9 +18,9 @@ const boundaries = () => props.results?.candidate_boundaries || []
     <div class="list">
       <div v-for="(s, i) in scenes()" :key="i" class="item">
         <span class="time">{{ msStr(s.start_ms) }} → {{ msStr(s.end_ms) }}</span>
-        <span class="shots">{{ s.start_shot }} → {{ s.end_shot }}</span>
-        <span class="score" :class="s.scene_score > 70 ? 'hi' : s.scene_score > 40 ? 'mid' : 'lo'">
-          {{ s.scene_score }}
+        <span class="shots">{{ s.shot_ids?.[0] }} → {{ s.shot_ids?.at(-1) }}</span>
+        <span class="score" :class="s.scene_score > 0.7 ? 'hi' : s.scene_score > 0.4 ? 'mid' : 'lo'">
+          {{ s.scene_score == null ? '—' : Math.round(s.scene_score * 100) }}
         </span>
       </div>
       <p v-if="scenes().length === 0" class="info">No scenes loaded yet</p>

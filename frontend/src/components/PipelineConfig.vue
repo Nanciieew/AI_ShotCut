@@ -1,16 +1,15 @@
 <script setup>
-const scoreMode = defineModel('scoreMode', { default: 'weighted' })
+const scoreMode = defineModel('scoreMode', { default: 'location_only' })
 const intensity = defineModel('intensity', { default: 'medium' })
 const minDist = defineModel('minDist', { default: 12 })
 const sceneAnalysis = defineModel('sceneAnalysis', { default: true })
-const customWeights = defineModel('customWeights', { default: () => ({ L:5, C:3, P:2 }) })
+const customWeights = defineModel('customWeights', { default: () => ({ L:5, C:3, S:2 }) })
 
 const modes = [
-  { key: 'weighted', label: 'Weighted' },
-  { key: 'location_only', label: 'Location' },
-  { key: 'character_only', label: 'Character' },
-  { key: 'plot_only', label: 'Plot' },
-  { key: 'custom', label: 'Custom' },
+  { key: 'location_only', label: 'Scene Only' },
+  { key: 'character_only', label: 'Character Only' },
+  { key: 'subtitle_only', label: 'Story Only' },
+  { key: 'custom', label: 'Customize' },
 ]
 </script>
 
@@ -26,9 +25,9 @@ const modes = [
     </div>
 
     <div v-if="scoreMode === 'custom'" class="weights">
-      <label>Location <input type="range" min="1" max="10" v-model.number="customWeights.L" /> {{ customWeights.L }}/10</label>
-      <label>Character <input type="range" min="1" max="10" v-model.number="customWeights.C" /> {{ customWeights.C }}/10</label>
-      <label>Plot <input type="range" min="1" max="10" v-model.number="customWeights.P" /> {{ customWeights.P }}/10</label>
+      <label>Scene / Location <input type="range" min="0" max="10" v-model.number="customWeights.L" /> {{ customWeights.L }}/10</label>
+      <label>Character <input type="range" min="0" max="10" v-model.number="customWeights.C" /> {{ customWeights.C }}/10</label>
+      <label>Story transition <input type="range" min="0" max="10" v-model.number="customWeights.S" /> {{ customWeights.S }}/10</label>
     </div>
 
     <div class="row">

@@ -7,7 +7,6 @@ import ResultsScene from './components/ResultsScene.vue'
 
 const phase = ref('idle')  // idle | uploading | uploaded | configuring | running | done
 const videoId = ref('')
-const projectId = ref('')
 const filename = ref('')
 const fileSize = ref(0)
 const taskId = ref('')
@@ -20,13 +19,12 @@ const shotModel = ref('ffmpeg_scene')
 const scoreMode = ref('location_only')
 const intensity = ref('medium')
 const minDist = ref(12)
-const customW = ref({ L:5, C:5, P:5 })
+const customW = ref({ L:5, C:5, S:5 })
 
 let pollTimer = null
 
 async function onUploaded(data) {
   videoId.value = data.video_id
-  projectId.value = data.project_id
   filename.value = data.filename
   fileSize.value = data.size_bytes
   phase.value = 'configuring'
@@ -34,29 +32,26 @@ async function onUploaded(data) {
 
 function getPipelineParams() {
   const isScene = analysisPurpose.value !== 'shot_detection'
-  const form = new FormData()
-  form.append('project_id', projectId.value)
-  form.append('extract_keyframes', 'true')
-  form.append('scene_analysis', isScene ? 'true' : 'false')
-  form.append('shot_model', shotModel.value)
-  if (isScene) {
-    form.append('score_mode', scoreMode.value)
-    form.append('cut_intensity', intensity.value)
-    form.append('min_distance_s', minDist.value.toString())
-    if (scoreMode.value === 'custom') {
-      form.append('location_w', customW.value.L.toString())
-      form.append('character_w', customW.value.C.toString())
-      form.append('plot_w', customW.value.P.toString())
-    }
+  return {
+    scene_analysis: isScene,
+    score_mode: isScene ? scoreMode.value : 'location_only',
+    cut_intensity: intensity.value,
+    min_distance_s: minDist.value,
+    location_weight: scoreMode.value === 'custom' ? customW.value.L : 1,
+    character_weight: scoreMode.value === 'custom' ? customW.value.C : 1,
+    subtitle_weight: scoreMode.value === 'custom' ? customW.value.S : 1,
   }
-  return form
 }
 
 async function startPipeline() {
   if (!videoId.value) return
   phase.value = 'running'
-  const form = getPipelineParams()
-  const r = await fetch(`/api/v1/videos/${videoId.value}/analyze-shots`, { method: 'POST', body: form })
+  const parameters = getPipelineParams()
+  const r = await fetch(`/api/v1/videos/${videoId.value}/tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(parameters),
+  })
   const d = await r.json()
   if (d.task_id) {
     taskId.value = d.task_id

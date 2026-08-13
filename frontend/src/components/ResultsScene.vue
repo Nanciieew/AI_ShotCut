@@ -2,8 +2,15 @@
 import { computed } from 'vue'
 const props = defineProps({ results: Object, videoId: String, purpose: String })
 
-const scenes = computed(() => props.results?.final_scenes || [])
+const scenes = computed(() => props.results?.scenes || [])
 const boundaries = computed(() => props.results?.candidate_boundaries || [])
+const evidenceByScene = computed(() => Object.fromEntries(
+  (props.results?.scene_evidence || []).map(item => [item.scene_id, item])
+))
+
+function firstShot(scene) { return scene.shot_ids?.[0] || '' }
+function lastShot(scene) { return scene.shot_ids?.at(-1) || '' }
+function scorePercent(score) { return score == null ? '—' : Math.round(score * 100) }
 
 function msStr(ms) {
   const h = Math.floor(ms / 3600000); const m = Math.floor((ms % 3600000) / 60000)
@@ -16,7 +23,7 @@ function imgUrl(shotId) {
 }
 
 function exportJSON() {
-  const blob = new Blob([JSON.stringify({ final_scenes: scenes.value, candidate_boundaries: boundaries.value }, null, 2)], { type: 'application/json' })
+  const blob = new Blob([JSON.stringify({ scenes: scenes.value, scene_evidence: props.results?.scene_evidence || [], candidate_boundaries: boundaries.value }, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a'); a.href = url; a.download = 'scene_segmentation.json'; a.click()
   URL.revokeObjectURL(url)
@@ -40,16 +47,23 @@ const showEEG = computed(() => props.purpose === 'edit_suggestion')
     <div class="scene-list">
       <div v-for="(s,i) in scenes" :key="i" class="scene-card">
         <div class="scene-img">
-          <img :src="imgUrl(s.start_shot)" :alt="s.start_shot" @error="$event.target.style.display='none'" />
+          <img :src="imgUrl(firstShot(s))" :alt="firstShot(s)" @error="$event.target.style.display='none'" />
         </div>
         <div class="scene-info">
           <div class="scene-time">{{ msStr(s.start_ms) }} → {{ msStr(s.end_ms) }}</div>
-          <div class="scene-shots">{{ s.start_shot }} → {{ s.end_shot }}</div>
+          <div class="scene-shots">{{ firstShot(s) }} → {{ lastShot(s) }} · {{ s.shot_ids?.length || 0 }} shots</div>
           <div class="scene-desc" v-if="s.summary">{{ s.summary }}</div>
-          <div v-else class="scene-desc muted">Scene {{ i+1 }} · Score {{ s.scene_score }}</div>
+          <div v-else class="scene-desc muted">
+            Scene {{ i+1 }} · Boundary {{ scorePercent(s.scene_score) }}%
+            <span v-if="evidenceByScene[s.scene_id]">
+              · Location continuity {{ scorePercent(evidenceByScene[s.scene_id].location_continuity) }}%
+              · Character continuity {{ scorePercent(evidenceByScene[s.scene_id].character_continuity) }}%
+              · Subtitle continuity {{ scorePercent(evidenceByScene[s.scene_id].subtitle_continuity) }}%
+            </span>
+          </div>
         </div>
-        <div class="scene-score" :class="s.scene_score>70?'hi':s.scene_score>40?'mid':'lo'">
-          {{ s.scene_score }}
+        <div class="scene-score" :class="s.scene_score>0.7?'hi':s.scene_score>0.4?'mid':'lo'">
+          {{ scorePercent(s.scene_score) }}
         </div>
       </div>
     </div>

@@ -14,7 +14,6 @@ async function upload() {
   uploading.value = true; msg.value = 'Uploading...'
   const form = new FormData()
   form.append('file', file.value)
-  form.append('project_id', 'default')
   try {
     const r = await fetch('/api/v1/videos', { method: 'POST', body: form })
     const d = await r.json()
