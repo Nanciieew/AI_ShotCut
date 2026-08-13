@@ -28,9 +28,9 @@
 
 | 层 | 目录 | 职责 |
 |----|------|------|
-| API 层 | `apps/api/` | 接收请求、校验输入、创建任务、返回 task_id、查询状态。**禁止直接执行模型推理。** |
-| 编排层 | `core/orchestration/` | 定义任务执行顺序、并行/串行决策、调用 Celery Task、处理失败、缓存复用。 |
-| Worker 层 | `workers/` | Celery Worker：FFmpeg 预处理、模型推理、保存 Artifact、更新进度。 |
+| API 层 | `apps/api/routes/` | 接收请求、校验输入、创建任务、返回 task_id、查询状态。路由函数禁止直接堆叠模型调用或执行第三方模型 API。 |
+| 编排层 | `core/orchestration/` | 定义任务执行顺序、并行/串行决策、调用 Python Workflow 步骤、处理失败、缓存复用。 |
+| 执行层 | `apps/api/services/` | 进程内 Workflow/Executor：执行 FFmpeg 预处理和 Adapter 调用、保存 Artifact、更新进度。 |
 | 适配层 | `models/*/adapter.py` | 所有模型通过统一 Adapter 接入。上层禁止直接调用第三方模型 API。 |
 | 存储层 | `core/storage/` | 文件/Artifact 存储 + 数据库（PostgreSQL/SQLite）。数据库不保存视频。 |
 | Schema 层 | `schemas/` | 跨模块统一数据结构，不得任意定义字段名。 |
@@ -43,6 +43,8 @@
 并行: detect_shots | transcribe | extract_audio_features
     ↓
 shots.json + subtitles.json + audio_features.npy
+    ↓
+字幕分层语义分析 → subtitle_continuity.json（全片候选 + 区间候选 + 统一复评分）
     ↓
 extract_visual_features → visual_features.npy
     ↓
@@ -63,6 +65,7 @@ assemble_final_result → final_result.json
 
 ### 评分
 - **系统只计算 `scene_score`。**
+- `scene_score` 仅支持四种模式：`location_only`、`character_only`、`subtitle_only`、`custom`；`custom` 权重按总和归一化且禁止全零。
 - **禁止创建或重新引入 `action_score`、`plot_score`。**
 - **禁止创建 `action_evidence`、`plot_evidence`。**
 - 允许的 Evidence：`visual_continuity`、`character_continuity`、`location_continuity`、`subtitle_continuity`、`audio_continuity`、`temporal_gap_ms`。
@@ -88,11 +91,11 @@ assemble_final_result → final_result.json
 - 模型权重禁止提交到 GitHub。
 
 ### 执行规则
-- API 层不得执行长推理或长时间 FFmpeg。
-- 所有耗时任务从 MVP 开始使用 **Celery**。
-- Celery Task 之间只传 ID / URI / JSON，不传大型数组。
-- 大型数据先保存为 Artifact，下游通过 URI 读取。
-- Redis 不保存整部视频或大型特征矩阵。
+- 当前阶段采用 **FastAPI + Python Workflow/Executor + Adapter** 的进程内执行方式，不引入 Celery、Redis 任务队列或独立 Worker 系统。
+- API 路由层只负责请求处理并调用 Service；FFmpeg、模型调用和流程控制必须集中在 Workflow/Executor，不得直接写在路由函数中。
+- Workflow 步骤之间只传 ID / URI / JSON，不传大型数组；大型数据先保存为 Artifact，下游通过 URI 读取。
+- 本地后台执行必须使用受控线程池或进程池，禁止每个请求无上限创建线程。
+- 进程重启后必须识别遗留的 `RUNNING` Task，将其标记为 `INTERRUPTED` 或按幂等规则安全重跑。
 
 ### 数据规则
 - 所有中间产物必须落盘或进入对象存储。
@@ -110,7 +113,7 @@ assemble_final_result → final_result.json
 - 所有 `__init__.py` 中的导出使用 `from module import Class` 模式
 - 文件名：snake_case
 - 类名：PascalCase
-- Celery Task 名称：`{domain}.{action}` 如 `video.normalize`
+- Workflow 步骤名称：`{domain}.{action}`，如 `video.normalize`
 
 ---
 
@@ -121,14 +124,16 @@ assemble_final_result → final_result.json
 | Schema | 文件 | 核心字段 |
 |--------|------|----------|
 | Video | `schemas/video.py` | video_id, project_id, duration_ms, fps_num/den, uris |
-| Task | `schemas/task.py` | task_id, video_id, status, stage, progress |
+| Task | `schemas/task.py` | task_id, video_id, status, stage, progress, retry_of_task_id, retry_count |
 | ModelRun | `schemas/model_run.py` | run_id, model_name, model_version, status, runtime_ms |
 | Artifact | `schemas/artifact.py` | artifact_id, artifact_type, uri, sha256 |
 | Shot | `schemas/shot.py` | shot_id, start_ms, end_ms, boundary_type, confidence |
 | SubtitleSegment | `schemas/subtitle.py` | subtitle_id, start_ms, end_ms, text, language |
-| Scene | `schemas/scene.py` | scene_id, shot_ids, scene_score |
+| SubtitleContinuityArtifact | `schemas/subtitle.py` | shot_id, boundary_index, timestamp_ms, subtitle_continuity |
+| CandidateBoundary | `schemas/scene.py` / 数据库 `candidate_boundaries` | run_id, shot_id, timestamp_ms, scene_score, continuities, selected |
+| Scene | `schemas/scene.py` | scene_id, video_id, index, shot_ids, scene_score；数据库通过 producer_run_id 关联生成它的 ModelRun |
 | SceneEvidence | `schemas/scene.py` | visual/character/location/subtitle/audio_continuity |
-| FinalResult | `schemas/result.py` | video + shots + subtitles + scenes + evidence |
+| FinalResult | `schemas/result.py` | result_type + video + shots + subtitles + scenes + evidence；Shot-only 使用 `result_type=shot_detection` 且不要求 merge |
 
 ---
 
@@ -143,18 +148,18 @@ assemble_final_result → final_result.json
 
 ---
 
-## 7. Celery 配置规则
+## 7. Workflow / Executor 规则
 
-```python
-task_track_started = True
-task_acks_late = True
-worker_prefetch_multiplier = 1
-task_reject_on_worker_lost = True
-broker_connection_retry_on_startup = True
-```
+- FastAPI 通过 Python Workflow/Executor 直接调用 Adapter。
+- 支持 `inline` 与 `local_background` 两种模式；长流程默认使用受控后台 Executor，避免阻塞事件循环。
+- 后台 Executor 必须设置全局并发上限，禁止每个请求无上限创建线程或进程。
+- Workflow 的每个步骤必须创建独立 ModelRun，并记录输入/输出 Artifact 关系。
+- API 进程启动时必须检查遗留的 `PENDING` / `QUEUED` / `RUNNING` Task，并标记为 `INTERRUPTED` 或按幂等规则安全重跑。
+- 重试必须创建新的 `task_id` 并通过 `retry_of_task_id` 关联旧任务，禁止覆盖旧任务 Artifact。
+- 进程内执行不承诺跨机器调度或进程退出后继续运行；若未来需要这些能力，应另行进行架构变更评审。
 
 重试策略：
-- **可重试**：临时网络错误、对象存储超时、Redis 短暂不可用、Worker 临时退出
+- **可重试**：临时网络错误、对象存储超时、第三方 API 暂时不可用
 - **不可重试**：视频损坏、格式不支持、Schema 错误、权重不兼容、CUDA 环境错误
 
 ---
@@ -163,8 +168,8 @@ broker_connection_retry_on_startup = True
 
 1. 禁止模型互相直接调用
 2. 禁止在 API 请求中执行长推理
-3. 禁止使用 FastAPI BackgroundTasks 替代 Celery 主流程
-4. 禁止将视频或大型 Tensor 放进 Redis
+3. 禁止在 API 路由函数中直接堆叠完整模型流程；必须通过统一 Workflow/Executor 调用
+4. 禁止在线程、进程或 Workflow 步骤之间复制传递视频或大型 Tensor
 5. 禁止把模型权重提交到 GitHub
 6. 禁止直接跟踪第三方仓库主分支
 7. 禁止写死本机绝对路径
@@ -179,7 +184,7 @@ broker_connection_retry_on_startup = True
 16. **禁止在系统中引入 `action_score`**
 17. **禁止在系统中引入 `plot_score`**
 18. 禁止模型内部自行操作 API、数据库和最终输出
-19. 禁止 Celery Task 直接返回大型数据
+19. 禁止 Workflow 步骤直接返回大型数据；必须先保存 Artifact，再返回 ID/URI/JSON
 20. 禁止没有 `task_id`、`video_id`、`run_id` 的日志
 
 ---
@@ -187,12 +192,12 @@ broker_connection_retry_on_startup = True
 ## 9. Agent 执行原则
 
 1. 先定义 Schema，再写模型调用
-2. 先完成 Celery 骨架，再接模型
+2. 先完成 Workflow/Executor 骨架，再接模型
 3. 先完成单模型闭环，再接第二个模型
 4. 每个模型必须独立 Adapter
 5. 每个模型必须独立 README
 6. 每个模型必须记录版本、权重与 License
-7. 每个 Celery Task 必须：可追踪、可重试、尽量幂等、保存 Artifact、更新状态、记录日志
+7. 每个 Workflow 步骤必须：可追踪、按策略重试、尽量幂等、保存 Artifact、更新状态、记录日志
 8. 大文件通过 URI 传递
 9. 小型结构数据通过 JSON 传递
 10. 所有跨模型时间对齐使用整数毫秒
@@ -207,7 +212,7 @@ broker_connection_retry_on_startup = True
 ## 10. 测试规则
 
 - 每个模型至少包含单元测试（Schema 转换、时间转换、Cache Key、路径生成）
-- 集成测试覆盖完整链路：FastAPI → Celery → Redis → Model Adapter → Artifact → Database → API 查询
+- 集成测试覆盖完整链路：FastAPI → Workflow/Executor → Model Adapter → Artifact → Database → API 查询
 - 回归测试：保存固定测试视频与预期输出范围，升级模型/依赖/CUDA/FFmpeg/Schema 后重跑
 
 ---
@@ -239,10 +244,10 @@ broker_connection_retry_on_startup = True
 - Artifact 先写临时文件，再原子重命名
 - 数据库记录与 Manifest 中的 ID 保持一致
 
-### Worker Queue
-- 7 个独立 Queue：video, shot, subtitle, feature, scene, final, maintenance
-- CPU 任务（video, final, maintenance）与 GPU 任务（shot, subtitle, feature, scene）分开
-- Celery Task 不传输视频、Tensor 或大型数组，只传 ID/URI/JSON
+### 本地 Executor
+- 统一配置线程池/进程池大小、任务超时和模型并发上限。
+- CPU 密集型 FFmpeg/后处理与 GPU 模型调用分别设置并发限制，避免资源争抢。
+- Workflow 步骤不传输视频、Tensor 或大型数组，只传 ID/URI/JSON；大型数据通过 Artifact 落盘流转。
 
 ## 13. 配置管理
 
@@ -267,3 +272,8 @@ broker_connection_retry_on_startup = True
 |------|----------|------|
 | 2026-07-27 | 初始创建 | 项目基础工程搭建，确立架构宪法 |
 | 2026-07-27 | 新增基础设施规则 | 后端结构补全：Alembic、Registry、Manifest、Queue、Settings |
+| 2026-08-12 | 执行架构调整为进程内 Workflow/Executor | 当前 FastAPI 通过 Python 直接调用 Adapter，不采用 Celery、Redis 任务队列或独立 Worker |
+| 2026-08-13 | Scene 增加 ModelRun 血缘并统一边界语义 | 支持同一视频多次分析、Scene/Evidence 结构化落库和任务级结果查询 |
+| 2026-08-13 | 增加条件 Workflow、Shot-only FinalResult 与不可变重试链路 | 按评分模式隔离外部模型依赖，避免重试覆盖 Artifact，并支持 Shot-only 结果查询 |
+| 2026-08-13 | 新增字幕分层语义连续性 Adapter | 以全片/区间候选发现和统一复评分生成 subtitle_continuity，并纳入 scene_score |
+| 2026-08-13 | 完善分析结果关系血缘 | Shot 关联生产 ModelRun，Task/ModelRun 补齐外键，所有候选边界结构化入库，Merge ModelRun 保存评分配置 |

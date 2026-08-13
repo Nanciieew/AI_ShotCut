@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-08-13: 跨任务内容寻址缓存
+
+- 已覆盖 `normalize`、`shots`、`keyframes`、`vision`、`asr`、`subtitle_semantic`。
+- Cache Key 由 `video_id + 输入内容摘要 + 模型/实现版本 + 有效参数` 规范化生成，不包含
+  `task_id`、签名 URL 或密钥。
+- 缓存只接受 `SUCCEEDED` ModelRun，并在命中前校验 Artifact 文件、大小与 SHA-256。
+- 标准化视频/音频直接引用不可变 Artifact；Shot、关键帧摘要、字幕、Vision 与字幕语义 JSON
+  会为新任务重新落盘并重映射全局 ID，保留任务级数据库血缘。
+- 请求可用 `force_recompute` 按步骤绕过缓存；缓存键冲突不会阻断 Workflow。
+- 旧成功 Run 可在严格验证输入/时间线/文件摘要后一次性补录规范 Cache Key。
+- Test1 实测：首次建立预处理缓存 `26.160s`，随后完整跨任务命中 `0.868s`；结果仍包含
+  63 Shots、36 Subtitles、4 Scenes、3 SceneEvidence，且两个任务的 Shot/Subtitle ID 无重叠。
+
+---
+
 ## 2026-08-05: Scene Score 计算模式 + 自适应 Batch + 音频分片
 
 ### 四种 Scene Score 模式
