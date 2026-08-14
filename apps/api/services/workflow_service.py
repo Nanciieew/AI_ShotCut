@@ -1587,15 +1587,15 @@ class WorkflowService:
     ) -> str | None:
         from models.doubao_vision.adapter import DoubaoVisionAdapter
         from models.vlm_boundary.prompts import (
-            LOCATION_CHARACTER_BATCH_TEMPLATE,
-            LOCATION_CHARACTER_SYSTEM,
+            SHOT_DESCRIPTOR_SYSTEM,
+            SHOT_DESCRIPTOR_TEMPLATE,
         )
 
         if len(shots) < 2:
             return None
 
-        model, ver = "doubao_vision", "1.0.0"
-        vision_parameters = {"batch_size": 1, "concurrency": 3, "max_attempts": 2}
+        model, ver = "doubao_vision", "1.1.0"
+        vision_parameters = {"descriptor_mode": "three_frame_registry", "max_attempts": 2}
         keyframe_fingerprint = self._keyframe_content_fingerprint(keyframes_artifact_id)
         cache_key = canonical_cache_key(
             stage="scene.score_visual_continuity",
@@ -1608,9 +1608,9 @@ class WorkflowService:
             },
             parameters={
                 **vision_parameters,
-                "prompt": hash_json([LOCATION_CHARACTER_SYSTEM, LOCATION_CHARACTER_BATCH_TEMPLATE]),
+                "prompt": hash_json([SHOT_DESCRIPTOR_SYSTEM, SHOT_DESCRIPTOR_TEMPLATE]),
             },
-            implementation="doubao-vision-boundary-contract-v3",
+            implementation="doubao-vision-shot-registry-contract-v1",
         )
         hit = (
             self.cache.find(
@@ -1621,21 +1621,6 @@ class WorkflowService:
             if use_cache
             else None
         )
-        legacy_scores = None
-        if hit is None and use_cache:
-            legacy = self._find_reusable_vision_scores(
-                vid,
-                shots,
-                keyframe_fingerprint,
-            )
-            if legacy is not None:
-                legacy_scores, source_artifact_id, source_run_id = legacy
-                self.cache.promote_legacy_run(source_run_id, cache_key)
-                hit = CacheHit(
-                    source_run_id=source_run_id,
-                    cache_key=cache_key,
-                    outputs={"scores": self.cache.artifact(source_artifact_id)},
-                )
         run_id = self._create_run(
             tid,
             vid,
@@ -1654,18 +1639,30 @@ class WorkflowService:
                 },
                 complete=False,
             )
-            if legacy_scores is None:
-                with open(self.a.resolve(hit.outputs["scores"].uri), encoding="utf-8") as file:
-                    source_scores = json.load(file).get("scores", [])
-                if len(source_scores) != len(shots) - 1:
-                    raise RuntimeError("CACHE_CORRUPT: Vision score count does not match shots")
-                legacy_scores = [
-                    {**score, "shot_id": str(shots[index]["shot_id"])}
-                    for index, score in enumerate(source_scores)
-                ]
-            scores = legacy_scores
+            with open(self.a.resolve(hit.outputs["scores"].uri), encoding="utf-8") as file:
+                vision_result = json.load(file)
+            source_scores = vision_result.get("scores", [])
+            if len(source_scores) != len(shots) - 1:
+                raise RuntimeError("CACHE_CORRUPT: Vision score count does not match shots")
+            scores = [
+                {**score, "shot_id": str(shots[index]["shot_id"])}
+                for index, score in enumerate(source_scores)
+            ]
+            source_descriptors = vision_result.get("shot_descriptors", [])
+            if source_descriptors and len(source_descriptors) != len(shots):
+                raise RuntimeError("CACHE_CORRUPT: Vision descriptor count does not match shots")
+            vision_result = {
+                **vision_result,
+                "video_id": vid,
+                "scores": scores,
+                "shot_descriptors": [
+                    {**descriptor, "shot_id": str(shots[index]["shot_id"])}
+                    for index, descriptor in enumerate(source_descriptors)
+                ],
+            }
         else:
             scores = None
+            vision_result = None
         with get_sync_session() as session:
             if not hit:
                 session.add_all(
@@ -1694,7 +1691,7 @@ class WorkflowService:
                     model_version=ver,
                     run_id=run_id,
                     filename="doubao_vision_scores.json",
-                    data={"video_id": vid, "scores": scores},
+                    data=vision_result,
                     artifact_type="location_character_scores",
                     output_role="scores",
                     db_session=session,
@@ -1726,7 +1723,8 @@ class WorkflowService:
         if output.get("status") != "SUCCEEDED":
             raise RuntimeError(str(output.get("error", {})))
 
-        scores = adapter._last_result.get("scores", [])
+        vision_result = adapter._last_result
+        scores = vision_result.get("scores", [])
         expected_ids = [str(shot["shot_id"]) for shot in shots[:-1]]
         returned_ids = [str(item.get("shot_id", "")) for item in scores]
         if len(scores) != len(expected_ids) or set(returned_ids) != set(expected_ids):
@@ -1754,7 +1752,7 @@ class WorkflowService:
                 model_version=ver,
                 run_id=run_id,
                 filename="doubao_vision_scores.json",
-                data={"video_id": vid, "scores": scores},
+                data=vision_result,
                 artifact_type="location_character_scores",
                 output_role="scores",
                 db_session=session,
