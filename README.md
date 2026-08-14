@@ -85,6 +85,12 @@ python -m uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8080
 
 需要 FFmpeg、可访问的数据库，以及在启用相应步骤时配置豆包 ASR、豆包 Vision、DeepSeek 和 Provider/ngrok。 `GET /health/ready` 会报告数据库、存储、FFmpeg、Provider Gateway、公共 URL 和模型凭据健康状态。
 
+### 局域网访问
+
+`.env` 中的 `API_HOST=0.0.0.0` 会让原生 FastAPI 监听本机全部网络接口。若 API 已在运行，先执行 `python scripts/dev/stop.py`，再运行 `python scripts/dev/start.py`；终端会打印形如 `http://192.168.x.x:8080` 的 LAN 地址。同一局域网设备可通过该地址访问网页和 API。前端使用相对 `/api/v1/...` 路径，因此无需另行设置 API 地址。
+
+Windows 首次提示时应只允许 Python/Uvicorn 使用**专用网络**；不要在公用网络开放端口。Docker 的 PostgreSQL 和 Provider Gateway 仍保持仅本机可访问。
+
 ## API
 
 | Method | Path | Purpose |

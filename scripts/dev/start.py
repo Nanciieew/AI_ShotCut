@@ -8,6 +8,7 @@ Usage:
 """
 
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -21,14 +22,37 @@ API_LOG_FILE = RUNTIME_DIR / "native-api.log"
 
 
 def _api_port() -> int:
-    value = os.getenv("API_PORT")
+    return int(_read_api_setting("API_PORT") or "8080")
+
+
+def _read_api_setting(name: str) -> str | None:
+    """Read an API setting from the environment, then the local .env file."""
+    value = os.getenv(name)
     env_file = PROJECT_ROOT / ".env"
     if value is None and env_file.exists():
         for line in env_file.read_text(encoding="utf-8-sig").splitlines():
-            if line.startswith("API_PORT="):
+            if line.startswith(f"{name}="):
                 value = line.split("=", 1)[1].strip()
                 break
-    return int(value or "8080")
+    return value
+
+
+def _api_host() -> str:
+    """Return the bind host; 0.0.0.0 exposes the native API on the LAN."""
+    return _read_api_setting("API_HOST") or "0.0.0.0"
+
+
+def _lan_addresses() -> list[str]:
+    """Return non-loopback IPv4 addresses suitable for local-network URLs."""
+    addresses: set[str] = set()
+    try:
+        for item in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            address = item[4][0]
+            if not address.startswith("127."):
+                addresses.add(address)
+    except OSError:
+        pass
+    return sorted(addresses)
 
 
 def _project_python() -> Path:
@@ -47,9 +71,12 @@ def _api_is_ready(port: int) -> bool:
         return False
 
 
-def _start_native_api(port: int) -> int:
+def _start_native_api(host: str, port: int) -> int:
     if _api_is_ready(port):
-        print(f"Native API is already available on port {port}.")
+        print(
+            f"Native API is already available on port {port}; "
+            "run scripts/dev/stop.py before changing API_HOST."
+        )
         return 0
 
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
@@ -59,7 +86,7 @@ def _start_native_api(port: int) -> int:
         "uvicorn",
         "apps.api.main:app",
         "--host",
-        "127.0.0.1",
+        host,
         "--port",
         str(port),
     ]
@@ -123,9 +150,10 @@ def main() -> int:
     if result.returncode != 0:
         return result.returncode
 
+    host = _api_host()
     port = _api_port()
     if not args.infra_only:
-        result_code = _start_native_api(port)
+        result_code = _start_native_api(host, port)
         if result_code != 0:
             return result_code
 
@@ -134,6 +162,9 @@ def main() -> int:
         print(f"  Frontend:    http://localhost:{port}")
         print(f"  API Docs:    http://localhost:{port}/docs")
         print(f"  Health:      http://localhost:{port}/health/live")
+        if host == "0.0.0.0":
+            for address in _lan_addresses():
+                print(f"  LAN:         http://{address}:{port}")
         print(f"  API log:     {API_LOG_FILE}")
     print("\nRun 'python scripts/dev/stop.py' to stop.")
     return 0
