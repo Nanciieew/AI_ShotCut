@@ -45,7 +45,7 @@ models:
 
   doubao_vision:
     task: scene_boundary_detection
-    description: Doubao-Seed-1.6-vision via Volcano Ark. Three-frame Shot descriptors, task-level location/character registry, and deterministic boundary scoring.
+    description: Doubao-Seed-1.6-vision via Volcano Ark. Dynamic-frame Shot descriptors, bounded concurrent registry batches, and deterministic boundary scoring.
     repository: ""
     revision: ""
     code_license: unknown
@@ -57,8 +57,8 @@ models:
     requires_gpu: false
     notes: |
       Volcano Ark vision model. API key via VOLC_VISION_API_KEY.
-      /v3/chat/completions, OpenAI-compatible. Adapter version 1.1.0 analyses
-      1/4, 1/2, and 3/4 frames sequentially so identity registries remain stable.
+      /v3/chat/completions, OpenAI-compatible. Adapter version 1.2.0 uses
+      dynamic frame counts and bounded three-Shot batches with registry reconciliation.
 
   vlm_scene_boundary:
     task: scene_boundary_detection
@@ -78,7 +78,7 @@ models:
 
   subtitle_semantic:
     task: subtitle_continuity_analysis
-    description: Hierarchical subtitle semantics mapped to shot-boundary continuity evidence.
+    description: Cached and batched hierarchical subtitle semantics mapped to shot-boundary continuity evidence.
     repository: ""
     revision: ""
     code_license: unknown
@@ -91,4 +91,5 @@ models:
     notes: |
       DeepSeek via modelarts-maas API. API key in DEEPSEEK_API_KEY.
       Discovers global/local candidates, uniformly rescores them, and outputs
-      subtitle_continuity in [0,1].
+      subtitle_continuity in [0,1]. Version 1.1.0 caches summary/global/local/rescore
+      phases independently, batches up to three local intervals, and records request telemetry.

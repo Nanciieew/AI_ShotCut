@@ -1,54 +1,39 @@
-"""Prompts for hierarchical subtitle-based narrative transition analysis."""
+"""Concise prompts for hierarchical subtitle narrative-transition analysis."""
 
-SUMMARY_SYSTEM = """You analyse film subtitles as timed narrative evidence.
-Return JSON only. Do not invent events not supported by the subtitles."""
+SUMMARY_SYSTEM = """Analyse timed film subtitles as narrative evidence. Return valid JSON
+only. Use only supported events. Keep every reason at 80 Chinese characters or fewer."""
 
-SUMMARY_USER = """Summarise this chronological subtitle block. Preserve the important
-character goals, conflicts, revelations, relationship changes, causal direction, and
-unresolved state. Include timestamps in milliseconds for important events.
+SUMMARY_USER = """Summarise goals, conflicts, revelations, relationship changes, causal
+direction and unresolved state. Preserve important millisecond timestamps.
+Schema: {{"summary":"...","events":[{{"timestamp_ms":0,"event":"..."}}]}}
+Subtitles:
+{transcript}"""
 
-Return: {{\"summary\": \"...\", \"events\": [{{\"timestamp_ms\": 0, \"event\": \"...\"}}]}}
+GLOBAL_USER = """From these ordered summaries, return at most {limit} persistent core
+narrative turns. A core turn changes goals, stakes, known information, relationships or
+causal direction; exclude speaker/topic/camera changes.
+Schema: {{"candidates":[{{"timestamp_ms":0,"reason":"..."}}]}}
+Summaries: {summaries}"""
 
-Subtitle block:
-{transcript}
-"""
-
-GLOBAL_USER = """Read the ordered summaries as one complete film. Identify at most
-{limit} core narrative transition timestamps. A core transition must materially change
-the story's goals, conflict or stakes, known information, relationships, causal direction,
-or produce a persistent/irreversible new state. Return timestamps only; do not assign a
-score here.
-
-Return: {{\"candidates\": [{{\"timestamp_ms\": 0, \"reason\": \"...\"}}]}}
-
-Ordered summaries:
-{summaries}
-"""
-
-LOCAL_USER = """Within [{start_ms}, {end_ms}) identify at most {limit} additional local
-narrative transitions not already represented by the supplied core timestamps. A local
-transition changes the dramatic beat or narrative state, not merely the speaker, camera,
-location wording, or topic phrasing. Return timestamps only; do not assign a score here.
-
-Return: {{\"candidates\": [{{\"timestamp_ms\": 0, \"reason\": \"...\"}}]}}
+LOCAL_BATCH_USER = """Find additional local narrative turns for every interval. Do not
+repeat core timestamps. Return every interval_id exactly once; timestamps must remain
+inside its [start_ms,end_ms). An interval may have zero candidates.
+Schema: {{"intervals":[{{"interval_id":"i0","candidates":[
+{{"timestamp_ms":0,"reason":"..."}}]}}]}}
 Core timestamps: {core_timestamps}
-Relevant summaries:
-{summaries}
-"""
+Intervals: {intervals}"""
 
-RESCORE_USER = """Evaluate every supplied shot boundary with one consistent standard.
-For each boundary return subtitle_continuity in [0,1], where 1 means the narrative state
-continues unchanged and 0 means the strongest persistent/irreversible transition. Consider
-changes in goals, conflict/stakes, information/revelation, relationships, causal direction,
-and persistence. Do not reward a mere speaker change, silence, wording change, or visual cut.
-Use this transition-strength rubric T = 1 - subtitle_continuity consistently:
-T < 0.10 continuation; 0.10-0.25 minor beat; 0.25-0.45 local transition;
-0.45-0.65 significant transition; 0.65-0.85 major transition; >=0.85 core/climactic turn.
+RESCORE_USER = """Score every boundary once using one standard. subtitle_continuity is
+in [0,1]: 1=unchanged narrative state, 0=strongest persistent turn. Ignore mere speaker,
+silence, wording or visual-cut changes. Transition strength T=1-continuity:
+<0.10 continuation; 0.10-0.25 minor; 0.25-0.45 local; 0.45-0.65 significant;
+0.65-0.85 major; >=0.85 core/climactic.
+Schema: {{"boundaries":[{{"boundary_id":"b0","subtitle_continuity":0.0,
+"reason":"..."}}]}}
+Contexts: {contexts}"""
 
-Return all items exactly once:
-{{\"boundaries\": [{{\"boundary_id\": \"b0\", \"subtitle_continuity\": 0.0,
-\"reason\": \"...\"}}]}}
-
-Boundary contexts:
-{contexts}
-"""
+JSON_REPAIR_USER = """Convert the following malformed model output into valid JSON that
+matches this schema. Preserve values; do not add analysis or markdown.
+Schema: {schema}
+Malformed output:
+{raw}"""

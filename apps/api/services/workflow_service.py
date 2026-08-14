@@ -43,6 +43,13 @@ from schemas.scene import CandidateBoundary as CandidateBoundarySchema
 _INTENSITY_RATIOS = {"high": 0.06, "medium": 0.04, "low": 0.01}
 
 
+class WorkflowStepError(RuntimeError):
+    def __init__(self, error: dict) -> None:
+        super().__init__(str(error))
+        self.error = error
+        self.retryable = bool(error.get("retryable", False))
+
+
 def _new_id() -> str:
     return uuid.uuid4().hex
 
@@ -1313,7 +1320,7 @@ class WorkflowService:
         from core.database.models import Artifact
         from models.subtitle_semantic.adapter import SubtitleSemanticAdapter
 
-        model, ver = "subtitle_semantic", "1.0.0"
+        model, ver = "subtitle_semantic", "1.1.0"
         subtitle_path = self.a.resolve(self._artifact_uri(subtitle_artifact_id))
         with open(subtitle_path, encoding="utf-8") as file:
             subtitle_data = json.load(file)
@@ -1332,6 +1339,8 @@ class WorkflowService:
             "context_ms": settings.subtitle_semantic_context_ms,
             "rescore_batch_size": settings.subtitle_semantic_rescore_batch_size,
             "local_concurrency": settings.subtitle_semantic_local_concurrency,
+            "local_min_chars": settings.subtitle_semantic_local_min_chars,
+            "local_min_segments": settings.subtitle_semantic_local_min_segments,
             "max_snap_ms": settings.subtitle_semantic_max_snap_ms,
             "max_snap_shots": settings.subtitle_semantic_max_snap_shots,
             "llm_model": settings.subtitle_llm_model,
@@ -1347,7 +1356,7 @@ class WorkflowService:
                 "shot_timeline": hash_json(_shot_timeline(shots)),
             },
             parameters=semantic_parameters,
-            implementation="hierarchical-subtitle-continuity-v2",
+            implementation="hierarchical-subtitle-continuity-v3",
         )
         hit = (
             self.cache.find(
@@ -1358,20 +1367,7 @@ class WorkflowService:
             if use_cache
             else None
         )
-        if hit is None and use_cache:
-            legacy = self._find_reusable_subtitle_continuity(vid, shots, subtitles)
-            if legacy is not None:
-                cached_data, source_artifact_id, source_run_id = legacy
-                self.cache.promote_legacy_run(source_run_id, cache_key)
-                hit = CacheHit(
-                    source_run_id=source_run_id,
-                    cache_key=cache_key,
-                    outputs={"continuity": self.cache.artifact(source_artifact_id)},
-                )
-            else:
-                cached_data = None
-        else:
-            cached_data = None
+        cached_data = None
         run_id = self._create_run(
             tid,
             vid,
@@ -1440,12 +1436,31 @@ class WorkflowService:
             self._update_status(tid, "RUNNING", "score_subtitle_semantics", 90)
             return artifact["artifact_id"]
 
-        adapter = SubtitleSemanticAdapter()
+        from apps.api.services.subtitle_stage_cache import SubtitleStageCache
+
+        stage_cache = SubtitleStageCache(
+            project_id=pid,
+            video_id=vid,
+            task_id=tid,
+            input_artifact_ids={
+                "subtitles": subtitle_artifact_id,
+                "shots": shots_artifact_id,
+            },
+            model_identity={
+                "model": settings.subtitle_llm_model,
+                "base_url": settings.subtitle_llm_base_url,
+                "prompt_contract": "subtitle-semantic-v3",
+            },
+            artifacts=self.a,
+            cache=self.cache,
+        )
+        adapter = SubtitleSemanticAdapter(stage_cache=stage_cache)
         output = adapter.predict(
             {
                 "schema_version": "1.0",
                 "task_id": tid,
                 "video_id": vid,
+                "run_id": run_id,
                 "model": {"name": model, "version": ver},
                 "input": {
                     "subtitle_segments": subtitle_data.get("subtitle_segments", []),
@@ -1594,8 +1609,13 @@ class WorkflowService:
         if len(shots) < 2:
             return None
 
-        model, ver = "doubao_vision", "1.1.0"
-        vision_parameters = {"descriptor_mode": "three_frame_registry", "max_attempts": 2}
+        model, ver = "doubao_vision", "1.2.0"
+        vision_parameters = {
+            "descriptor_mode": "dynamic_frame_batched_registry",
+            "max_attempts": 2,
+            "concurrency": 3,
+            "max_tokens": 900,
+        }
         keyframe_fingerprint = self._keyframe_content_fingerprint(keyframes_artifact_id)
         cache_key = canonical_cache_key(
             stage="scene.score_visual_continuity",
@@ -1610,7 +1630,7 @@ class WorkflowService:
                 **vision_parameters,
                 "prompt": hash_json([SHOT_DESCRIPTOR_SYSTEM, SHOT_DESCRIPTOR_TEMPLATE]),
             },
-            implementation="doubao-vision-shot-registry-contract-v1",
+            implementation="doubao-vision-batched-registry-contract-v2",
         )
         hit = (
             self.cache.find(
@@ -1706,7 +1726,28 @@ class WorkflowService:
         shots_uri = self._artifact_uri(shots_artifact_id)
         keyframes_uri = self._artifact_uri(keyframes_artifact_id)
 
-        adapter = DoubaoVisionAdapter()
+        resume_state = self._load_vision_checkpoint(vid, cache_key)
+
+        def save_checkpoint(state: dict) -> None:
+            completed = len(state.get("shot_descriptors") or [])
+            checkpoint = {"cache_key": cache_key, **state}
+            self.a.write_artifact(
+                project_id=pid,
+                video_id=vid,
+                task_id=tid,
+                model_name=model,
+                model_version=ver,
+                run_id=run_id,
+                filename=f"vision_checkpoint_{completed:05d}.json",
+                data=checkpoint,
+                artifact_type="vision_descriptor_checkpoint",
+                output_role=f"checkpoint_{completed:05d}",
+            )
+
+        adapter = DoubaoVisionAdapter(
+            resume_state=resume_state,
+            checkpoint_callback=save_checkpoint,
+        )
         adapter.load()
         self._update_status(tid, "RUNNING", "score_vlm", 60)
         output = adapter.predict(
@@ -1714,6 +1755,7 @@ class WorkflowService:
                 "schema_version": "1.0",
                 "task_id": tid,
                 "video_id": vid,
+                "run_id": run_id,
                 "model": {"name": model, "version": ver},
                 "input": {"shots_uri": shots_uri, "keyframes_uri": keyframes_uri},
                 "parameters": vision_parameters,
@@ -1721,7 +1763,7 @@ class WorkflowService:
         )
 
         if output.get("status") != "SUCCEEDED":
-            raise RuntimeError(str(output.get("error", {})))
+            raise WorkflowStepError(output.get("error", {}))
 
         vision_result = adapter._last_result
         scores = vision_result.get("scores", [])
@@ -1763,6 +1805,35 @@ class WorkflowService:
             session.commit()
         self._update_status(tid, "RUNNING", "score_vlm", 70)
         return artifact["artifact_id"]
+
+    def _load_vision_checkpoint(self, video_id: str, cache_key: str) -> dict:
+        """Return the newest compatible cumulative descriptor checkpoint."""
+        with get_sync_session() as session:
+            candidates = list(
+                session.execute(
+                    select(Artifact)
+                    .where(
+                        Artifact.video_id == video_id,
+                        Artifact.artifact_type == "vision_descriptor_checkpoint",
+                    )
+                    .order_by(Artifact.created_at.desc())
+                    .limit(200)
+                ).scalars()
+            )
+        best: dict = {}
+        for artifact in candidates:
+            try:
+                with open(self.a.resolve(artifact.uri), encoding="utf-8") as file:
+                    state = json.load(file)
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+            if state.get("cache_key") != cache_key:
+                continue
+            if len(state.get("shot_descriptors") or []) > len(
+                best.get("shot_descriptors") or []
+            ):
+                best = state
+        return best
 
     def _find_reusable_vision_scores(
         self,
@@ -1875,32 +1946,20 @@ class WorkflowService:
         shots = shots_data["shots"]
 
         vlm_scores = []
-        try:
-            vs = self.a.read_json(
-                pid,
-                vid,
-                tid,
-                "doubao_vision",
-                "1.0.0",
-                "doubao_vision_scores.json",
-            )
-            vlm_scores = vs.get("scores", [])
-        except Exception:
-            pass
+        vision_artifact_id = input_artifacts.get("visual_continuity")
+        if vision_artifact_id:
+            with open(
+                self.a.resolve(self._artifact_uri(vision_artifact_id)), encoding="utf-8"
+            ) as file:
+                vlm_scores = json.load(file).get("scores", [])
 
         subtitle_scores = []
-        try:
-            subtitle_data = self.a.read_json(
-                pid,
-                vid,
-                tid,
-                "subtitle_semantic",
-                "1.0.0",
-                "subtitle_continuity.json",
-            )
-            subtitle_scores = subtitle_data.get("boundaries", [])
-        except Exception:
-            pass
+        subtitle_artifact_id = input_artifacts.get("subtitle_continuity")
+        if subtitle_artifact_id:
+            with open(
+                self.a.resolve(self._artifact_uri(subtitle_artifact_id)), encoding="utf-8"
+            ) as file:
+                subtitle_scores = json.load(file).get("boundaries", [])
 
         weights = _score_weights(mode, lw, cw, sw)
 
@@ -2189,7 +2248,7 @@ class WorkflowService:
                 model_run.status = "FAILED"
                 model_run.error_code = "STEP_FAILED"
                 model_run.error_message = str(error)
-                model_run.retryable = False
+                model_run.retryable = bool(getattr(error, "retryable", False))
                 model_run.finished_at = _now()
             if running:
                 session.commit()

@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 
 import pytest
 from PIL import Image
@@ -11,7 +13,7 @@ class _DescriptorProvider:
     def __init__(self) -> None:
         self.calls: list[list[dict]] = []
 
-    def send(self, messages):
+    def send(self, messages, **_kwargs):
         self.calls.append(messages)
         text = messages[1]["content"][0]["text"]
         shot_id = text.split("Describe Shot ID: ", 1)[1].splitlines()[0]
@@ -63,12 +65,43 @@ class _RetryingDescriptorProvider(_DescriptorProvider):
         super().__init__()
         self.attempts = 0
 
-    def send(self, messages):
+    def send(self, messages, **kwargs):
         self.attempts += 1
         if self.attempts == 1:
             self.calls.append(messages)
             return {"data": {"invalid": True}}
-        return super().send(messages)
+        return super().send(messages, **kwargs)
+
+
+class _RetryableErrorProvider(_DescriptorProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.attempts = 0
+
+    def send(self, messages, **kwargs):
+        self.attempts += 1
+        if self.attempts == 1:
+            raise SeedVisionAPIError("temporary timeout", retryable=True)
+        return super().send(messages, **kwargs)
+
+
+class _ConcurrentDescriptorProvider(_DescriptorProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.active = 0
+        self.max_active = 0
+        self.lock = threading.Lock()
+
+    def send(self, messages, **kwargs):
+        with self.lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        try:
+            time.sleep(0.03)
+            return super().send(messages, **kwargs)
+        finally:
+            with self.lock:
+                self.active -= 1
 
 
 def _input_artifacts(tmp_path, shot_ids):
@@ -110,7 +143,7 @@ def _run_adapter(tmp_path, provider, shot_ids=None):
             "task_id": "d" * 32,
             "video_id": "e" * 32,
             "input": {"shots_uri": str(shots_path), "keyframes_uri": str(keyframes_path)},
-            "parameters": {"max_attempts": 2},
+            "parameters": {"max_attempts": 2, "concurrency": 1},
         }
     )
     return adapter, output
@@ -160,3 +193,95 @@ def test_adapter_retries_invalid_shot_descriptor(tmp_path) -> None:
     _, output = _run_adapter(tmp_path, provider, ["a" * 32, "b" * 32])
     assert output["status"] == "SUCCEEDED"
     assert provider.attempts == 3  # first shot retries once, second succeeds once
+
+
+def test_adapter_retries_retryable_provider_error(tmp_path) -> None:
+    provider = _RetryableErrorProvider()
+    _, output = _run_adapter(tmp_path, provider, ["a" * 32, "b" * 32])
+    assert output["status"] == "SUCCEEDED"
+    assert provider.attempts == 3
+
+
+def test_adapter_checkpoints_and_resumes_completed_shots(tmp_path) -> None:
+    first_provider = _DescriptorProvider()
+    checkpoints = []
+    shots_path, keyframes_path = _input_artifacts(
+        tmp_path, ["a" * 32, "b" * 32, "c" * 32]
+    )
+    first = DoubaoVisionAdapter(checkpoint_callback=checkpoints.append)
+    first._provider = first_provider
+    first._loaded = True
+    first.predict(
+        {
+            "task_id": "d" * 32,
+            "video_id": "e" * 32,
+            "input": {"shots_uri": str(shots_path), "keyframes_uri": str(keyframes_path)},
+            "parameters": {"max_attempts": 2, "concurrency": 1},
+        }
+    )
+    assert [len(item["shot_descriptors"]) for item in checkpoints] == [1, 2, 3]
+
+    resumed_provider = _DescriptorProvider()
+    resumed = DoubaoVisionAdapter(resume_state=checkpoints[1])
+    resumed._provider = resumed_provider
+    resumed._loaded = True
+    output = resumed.predict(
+        {
+            "task_id": "f" * 32,
+            "video_id": "e" * 32,
+            "input": {"shots_uri": str(shots_path), "keyframes_uri": str(keyframes_path)},
+            "parameters": {"max_attempts": 2, "concurrency": 1},
+        }
+    )
+    assert output["status"] == "SUCCEEDED"
+    assert len(resumed_provider.calls) == 1
+    assert len(resumed._last_result["shot_descriptors"]) == 3
+
+
+def test_adapter_runs_bounded_shot_batch_concurrently(tmp_path) -> None:
+    provider = _ConcurrentDescriptorProvider()
+    shots_path, keyframes_path = _input_artifacts(
+        tmp_path, ["a" * 32, "b" * 32, "c" * 32]
+    )
+    adapter = DoubaoVisionAdapter()
+    adapter._provider = provider
+    adapter._loaded = True
+    output = adapter.predict(
+        {
+            "task_id": "d" * 32,
+            "video_id": "e" * 32,
+            "input": {"shots_uri": str(shots_path), "keyframes_uri": str(keyframes_path)},
+            "parameters": {"max_attempts": 2, "concurrency": 3},
+        }
+    )
+    assert output["status"] == "SUCCEEDED"
+    assert provider.max_active == 3
+
+
+def test_dynamic_frame_count_uses_fewer_images_for_short_shots(tmp_path) -> None:
+    provider = _DescriptorProvider()
+    shots_path, keyframes_path = _input_artifacts(tmp_path, ["a" * 32, "b" * 32])
+    shots_path.write_text(
+        json.dumps(
+            {
+                "shots": [
+                    {"shot_id": "a" * 32, "start_ms": 0, "end_ms": 800},
+                    {"shot_id": "b" * 32, "start_ms": 800, "end_ms": 3800},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    adapter = DoubaoVisionAdapter()
+    adapter._provider = provider
+    adapter._loaded = True
+    output = adapter.predict(
+        {
+            "task_id": "d" * 32,
+            "video_id": "e" * 32,
+            "input": {"shots_uri": str(shots_path), "keyframes_uri": str(keyframes_path)},
+            "parameters": {"max_attempts": 2, "concurrency": 1},
+        }
+    )
+    assert output["status"] == "SUCCEEDED"
+    assert [len(call[1]["content"]) - 1 for call in provider.calls] == [1, 2]

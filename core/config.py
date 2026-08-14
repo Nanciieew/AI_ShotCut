@@ -110,6 +110,8 @@ class Settings(BaseSettings):
     subtitle_semantic_context_ms: int = Field(default=90_000, ge=10_000)
     subtitle_semantic_rescore_batch_size: int = Field(default=20, ge=1, le=50)
     subtitle_semantic_local_concurrency: int = Field(default=3, ge=1, le=4)
+    subtitle_semantic_local_min_chars: int = Field(default=40, ge=0, le=10_000)
+    subtitle_semantic_local_min_segments: int = Field(default=3, ge=1, le=100)
     subtitle_semantic_max_snap_ms: int = Field(default=8_000, ge=0)
     subtitle_semantic_max_snap_shots: int = Field(default=2, ge=0, le=10)
 

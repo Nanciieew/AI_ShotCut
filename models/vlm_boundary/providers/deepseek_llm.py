@@ -5,10 +5,19 @@ import logging
 import time
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from models.vlm_boundary.providers.base import BaseProvider
 
 logger = logging.getLogger(__name__)
+
+
+class DeepSeekRequestError(RuntimeError):
+    """Provider failure carrying retry/429 telemetry for adaptive scheduling."""
+
+    def __init__(self, message: str, telemetry: dict) -> None:
+        super().__init__(message)
+        self.telemetry = telemetry
 
 
 class DeepSeekLLMProvider(BaseProvider):
@@ -22,6 +31,7 @@ class DeepSeekLLMProvider(BaseProvider):
         timeout: int = 180,
         max_attempts: int = 3,
         retry_delay_s: float = 1.0,
+        pool_size: int = 8,
     ):
         self.api_key = api_key
         self.model = model
@@ -31,6 +41,16 @@ class DeepSeekLLMProvider(BaseProvider):
         self.timeout = timeout
         self.max_attempts = max(1, min(5, max_attempts))
         self.retry_delay_s = max(0.0, retry_delay_s)
+        self.session = requests.Session()
+        self.session.mount(
+            "https://",
+            HTTPAdapter(
+                pool_connections=max(1, pool_size),
+                pool_maxsize=max(1, pool_size),
+                max_retries=0,
+                pool_block=True,
+            ),
+        )
 
     def send(self, messages: list[dict], **kwargs) -> dict:
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}
@@ -43,15 +63,37 @@ class DeepSeekLLMProvider(BaseProvider):
         t = kwargs.get("timeout", self.timeout)
         started = time.monotonic()
         last_error: Exception | None = None
+        status_codes: list[int] = []
+        rate_limited = False
         for attempt in range(1, self.max_attempts + 1):
             try:
-                resp = requests.post(self.base_url, headers=headers, json=payload, timeout=t)
+                resp = self.session.post(self.base_url, headers=headers, json=payload, timeout=t)
+                status_codes.append(resp.status_code)
                 if resp.status_code == 200:
                     elapsed = int((time.monotonic() - started) * 1000)
                     content = resp.json()["choices"][0]["message"]["content"]
-                    return _parse_json(content, elapsed)
+                    parsed = _parse_json(content, elapsed)
+                    parsed["telemetry"] = {
+                        "elapsed_ms": elapsed,
+                        "attempts": attempt,
+                        "retry_count": attempt - 1,
+                        "status_codes": status_codes,
+                        "rate_limited": rate_limited,
+                    }
+                    return parsed
                 if resp.status_code != 429 and resp.status_code < 500:
-                    raise RuntimeError(f"DeepSeek API {resp.status_code}: {resp.text[:500]}")
+                    elapsed = int((time.monotonic() - started) * 1000)
+                    raise DeepSeekRequestError(
+                        f"DeepSeek API {resp.status_code}: {resp.text[:500]}",
+                        {
+                            "elapsed_ms": elapsed,
+                            "attempts": attempt,
+                            "retry_count": attempt - 1,
+                            "status_codes": status_codes,
+                            "rate_limited": rate_limited,
+                        },
+                    )
+                rate_limited = rate_limited or resp.status_code == 429
                 last_error = RuntimeError(
                     f"DeepSeek retryable API {resp.status_code}: {resp.text[:500]}"
                 )
@@ -65,14 +107,22 @@ class DeepSeekLLMProvider(BaseProvider):
                 )
                 time.sleep(self.retry_delay_s * attempt)
 
-        raise RuntimeError(
-            f"DeepSeek request failed after {self.max_attempts} attempts: {last_error}"
+        elapsed = int((time.monotonic() - started) * 1000)
+        raise DeepSeekRequestError(
+            f"DeepSeek request failed after {self.max_attempts} attempts: {last_error}",
+            {
+                "elapsed_ms": elapsed,
+                "attempts": self.max_attempts,
+                "retry_count": self.max_attempts - 1,
+                "status_codes": status_codes,
+                "rate_limited": rate_limited,
+            },
         ) from last_error
 
     def health_check(self) -> bool:
         try:
             return (
-                requests.get(
+                self.session.get(
                     self.base_url.replace("/chat/completions", "/models"),
                     headers={"Authorization": f"Bearer {self.api_key}"},
                     timeout=10,
@@ -85,7 +135,7 @@ class DeepSeekLLMProvider(BaseProvider):
     def configured_model_available(self) -> bool:
         """Validate credentials and the configured inference model together."""
         try:
-            response = requests.get(
+            response = self.session.get(
                 self.base_url.replace("/chat/completions", "/models"),
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 timeout=10,

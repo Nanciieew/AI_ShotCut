@@ -22,14 +22,16 @@ def test_deepseek_retries_timeout_then_returns_parsed_json(monkeypatch) -> None:
             raise requests.Timeout("temporary")
         return _Response()
 
-    monkeypatch.setattr(requests, "post", post)
     provider = DeepSeekLLMProvider(
         api_key="test",
         max_attempts=2,
         retry_delay_s=0,
     )
+    monkeypatch.setattr(provider.session, "post", post)
 
     result = provider.send([{"role": "user", "content": "test"}])
 
     assert calls == 2
     assert result["data"] == {"ok": True}
+    assert result["telemetry"]["attempts"] == 2
+    assert result["telemetry"]["retry_count"] == 1
