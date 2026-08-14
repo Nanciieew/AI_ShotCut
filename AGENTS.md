@@ -13,9 +13,9 @@
 核心流程：
 
 ```text
-上传电影 → 视频标准化 → 镜头检测 → 字幕生成
-→ 多模态特征提取 → 场景边界判断 → Shot 合并为 Scene
-→ 计算 Scene Score → 保存并返回最终结果
+上传电影 → 视频标准化 → FFmpeg Shot 检测 → 关键帧与字幕生成
+→ 豆包 Vision / 字幕语义连续性 → 候选边界评分 → Shot 合并为 Scene
+→ 保存 Scene、Evidence 与 FinalResult
 ```
 
 ---
@@ -29,34 +29,24 @@
 | 层 | 目录 | 职责 |
 |----|------|------|
 | API 层 | `apps/api/routes/` | 接收请求、校验输入、创建任务、返回 task_id、查询状态。路由函数禁止直接堆叠模型调用或执行第三方模型 API。 |
-| 编排层 | `core/orchestration/` | 定义任务执行顺序、并行/串行决策、调用 Python Workflow 步骤、处理失败、缓存复用。 |
+| 编排层 | `apps/api/services/workflow_service.py` | 定义任务执行顺序、并行/串行决策、调用 Python Workflow 步骤、处理失败、缓存复用。 |
 | 执行层 | `apps/api/services/` | 进程内 Workflow/Executor：执行 FFmpeg 预处理和 Adapter 调用、保存 Artifact、更新进度。 |
 | 适配层 | `models/*/adapter.py` | 所有模型通过统一 Adapter 接入。上层禁止直接调用第三方模型 API。 |
-| 存储层 | `core/storage/` | 文件/Artifact 存储 + 数据库（PostgreSQL/SQLite）。数据库不保存视频。 |
+| 存储层 | `core/task_storage.py`、`core/artifacts/`、`core/database/` | 文件/Artifact 存储 + 数据库（PostgreSQL/SQLite）。数据库不保存视频。 |
 | Schema 层 | `schemas/` | 跨模块统一数据结构，不得任意定义字段名。 |
 
 ### 2.2 多模型数据流
 
 ```text
-原始视频 → normalize_video → normalized.mp4 + audio.wav + metadata.json
+原始视频 → video.normalize → video.normalized + audio.normalized + video_probe
     ↓
-并行: detect_shots | transcribe | extract_audio_features
+shot.detect → shots → shot.extract_keyframes → shot_keyframes
     ↓
-shots.json + subtitles.json + audio_features.npy
+audio.transcribe → subtitle_segments → subtitle.semantic_continuity
     ↓
-字幕分层语义分析 → subtitle_continuity.json（全片候选 + 区间候选 + 统一复评分）
+scene.score_visual_continuity → location_character_scores
     ↓
-extract_visual_features → visual_features.npy
-    ↓
-build_scene_features → scene_features.npz
-    ↓
-detect_scene_boundaries → scene_boundaries.json
-    ↓
-merge_shots_to_scenes → scenes.json
-    ↓
-calculate_scene_score → scene_scores.json
-    ↓
-assemble_final_result → final_result.json
+scene.merge_score → CandidateBoundary + Scene + SceneEvidence + final_scenes
 ```
 
 ---
@@ -79,9 +69,12 @@ assemble_final_result → final_result.json
 ### 数值范围
 - 所有特征值、置信度、score 必须归一化到 **[0, 1]**。
 
-### 模型职责
-- **Shot 模型**（OmniShotCut）：只负责 Shot Boundary Detection。
-- **Scene 模型**（SceneSeg/BaSSL）：只负责 Scene Boundary 候选。
+### 当前模型职责
+- **FFmpegSceneAdapter**（`models/ffmpeg_scene`）：只负责 Shot Boundary Detection，输出统一 Shot Schema。
+- **DoubaoASRAdapter**（`models/doubao_asr`）：只负责将已签名的标准化音频转为整数毫秒字幕。
+- **DoubaoVisionAdapter**（`models/doubao_vision`）：只负责从 Shot 关键帧产生地点与人物连续性 Evidence。
+- **SubtitleSemanticAdapter**（`models/subtitle_semantic`）：只负责从字幕产生 `subtitle_continuity` Evidence。
+- **WorkflowService 的 merge/score 步骤**：统一计算 `scene_score`、选择边界、合并 Shot 为 Scene，并保存 FinalResult；这不是模型 Adapter。
 - **模型不得直接决定最终切点**，最终切点由候选点 + scene_score + 选择算法决定。
 - **模型之间不能直接调用**，必须由编排层调度。
 
@@ -277,3 +270,4 @@ assemble_final_result → final_result.json
 | 2026-08-13 | 增加条件 Workflow、Shot-only FinalResult 与不可变重试链路 | 按评分模式隔离外部模型依赖，避免重试覆盖 Artifact，并支持 Shot-only 结果查询 |
 | 2026-08-13 | 新增字幕分层语义连续性 Adapter | 以全片/区间候选发现和统一复评分生成 subtitle_continuity，并纳入 scene_score |
 | 2026-08-13 | 完善分析结果关系血缘 | Shot 关联生产 ModelRun，Task/ModelRun 补齐外键，所有候选边界结构化入库，Merge ModelRun 保存评分配置 |
+| 2026-08-14 | 文档收敛为当前进程内执行架构 | 删除历史图纸、计划与待办，统一以 FFmpeg Shot、豆包 ASR/Vision、DeepSeek 字幕语义和 Workflow/Executor 为准 |

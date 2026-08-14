@@ -1,71 +1,64 @@
 # Movie Analysis Platform
 
-影片自动分段后端：上传视频后，FastAPI 通过受控的进程内 Workflow/Executor 调度 Adapter，完成标准化、镜头检测、关键帧、语音识别、语义连续性、场景合并与 `scene_score` 计算。
+影片自动分段后端。上传视频后，FastAPI 在受控的进程内 Executor 中运行 Workflow，调用 FFmpeg 与模型 Adapter，生成可追踪的 Artifact、数据库记录和最终 Scene 分析结果。
 
-## 当前架构
+## 当前能力
 
-```text
-FastAPI Route → TaskService → BackgroundExecutor → WorkflowService → Adapter
-                                      ↓
-                         PostgreSQL / SQLite + Artifact Storage
-```
+- 流式上传 MP4、MOV、AVI、MKV；后端用 FFprobe 校验真实容器并保存 SHA-256。
+- FFmpeg 标准化生成视频、16 kHz 音频和媒体元数据；FFmpeg scene filter 生成 Shot。
+- 为 Shot 抽取关键帧；豆包 Vision 生成地点和人物连续性；豆包 ASR 生成字幕；DeepSeek 生成字幕语义连续性。
+- 按 `location_only`、`character_only`、`subtitle_only` 或 `custom` 计算唯一的 `scene_score`，选择边界并合并连续 Shot 为 Scene。
+- 保存 `Video`、`Task`、`WorkflowRun`、`ModelRun`、`Artifact`、`Shot`、`Scene`、`SceneEvidence` 与最终 JSON；成功 Artifact 支持跨任务缓存复用。
 
-当前不使用 Celery、Redis 或独立 Worker。长任务在受控线程池中执行；进程重启时遗留任务会被标记为 `INTERRUPTED`。
-
-主流程：
+## 架构
 
 ```text
-upload → normalize(video.mp4, audio.wav) → detect shots → keyframes
-       → Doubao Vision / Doubao ASR → subtitle semantic continuity
-       → merge scenes → scene_score → FinalResult
+Web client
+  -> FastAPI routes -> TaskService -> BackgroundExecutor (bounded thread pool)
+  -> WorkflowService -> FFmpeg / model adapters
+  -> PostgreSQL or SQLite + local Artifact storage
+
+Workflow:
+upload -> normalize -> shots -> keyframes
+       -> ASR -> subtitle semantics
+       -> Vision -> merge/score -> FinalResult
 ```
 
-评分模式仅支持 `location_only`、`character_only`、`subtitle_only`、`custom`；所有自定义权重按总和归一化。
+当前不使用 Celery、Redis 或独立 Worker。API 重启时会将遗留的 PENDING、QUEUED、RUNNING 任务标为 `INTERRUPTED`；用户可用 retry API 创建新的不可变重试任务。
 
-## 开发启动
+## 启动
 
-```bash
-cp .env.example .env
-pip install -r requirements/api.txt
+```powershell
+Copy-Item .env.example .env
+python -m pip install -r requirements/api.txt
 alembic upgrade head
-uvicorn apps.api.main:app --reload --port 8080
+python -m uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
-Windows 开发环境默认在本机运行 FastAPI，Docker 只启动 PostgreSQL、迁移、Provider 和 ngrok：
-
-```bash
-python scripts/dev/start.py
-```
-
-停止全部项目服务：
-
-```bash
-python scripts/dev/stop.py
-```
-
-仅在专门测试容器化 API 时启用 `container-api` profile：
-
-```bash
-docker-compose --profile container-api up api
-```
+需要 FFmpeg、可访问的数据库，以及在启用相应步骤时配置豆包 ASR、豆包 Vision、DeepSeek 和 Provider/ngrok。 `GET /health/ready` 会报告数据库、存储、FFmpeg、Provider Gateway、公共 URL 和模型凭据健康状态。
 
 ## API
 
-- `POST /api/v1/videos`：流式上传视频。
-- `POST /api/v1/videos/{video_id}/tasks`：创建分析任务，返回新的 `task_id`。
-- `GET /api/v1/tasks/{task_id}`：查询状态和进度。
-- `POST /api/v1/tasks/{task_id}/retry`：创建不可变重试任务。
-- `GET /api/v1/videos/{video_id}/results`：读取最近成功任务的 `FinalResult`。
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/upload-config` | 上传格式、大小和默认 project 配置 |
+| POST | `/api/v1/projects/{project_id}/videos` | 流式上传视频，返回 `video_id` |
+| POST | `/api/v1/videos/{video_id}/tasks` | 创建分析任务，返回 `task_id` |
+| GET | `/api/v1/tasks/{task_id}` | 查询状态、阶段、进度与错误 |
+| POST | `/api/v1/tasks/{task_id}/retry` | 创建重试任务 |
+| GET | `/api/v1/videos/{video_id}/results` | 查询指定或最新成功任务的结果 |
+| GET | `/api/v1/tasks/{task_id}/artifacts` | 列出该任务产物 |
+| GET | `/api/v1/tasks/{task_id}/final-result/download` | 下载 FinalResult JSON |
 
-创建任务时可传 `force_recompute`（`normalize`、`shots`、`keyframes`、`vision`、`asr`、`subtitle_semantic`）绕过对应跨任务缓存。
+创建任务的请求体支持 `scene_analysis`、`score_mode`、`cut_intensity`、`min_distance_s` 和三个 0–10 的权重；`custom` 权重会按总和归一化且不能全为零。 `force_recompute` 可选择跳过某些缓存步骤。
 
-## 校验
+## 开发检查
 
-```bash
+```powershell
 ruff check .
 ruff format --check .
 mypy .
 pytest tests/unit -q
 ```
 
-更多架构约束见 [AGENTS.md](AGENTS.md)，Adapter 输入输出 Contract 见 [IO_Rule.md](IO_Rule.md)。
+长期规则见 [AGENTS.md](AGENTS.md)，模型输入输出约束见 [IO_Rule.md](IO_Rule.md)，完整系统说明见 [多模态电影场景智能分段系统技术方案.md](多模态电影场景智能分段系统技术方案.md)。
