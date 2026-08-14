@@ -19,7 +19,7 @@ def build_normalize_command(
 ) -> list[str]:
     """Build an FFmpeg normalization command as a parameter list.
 
-    Per spec: FFmpeg标准化_OmniShotCut_Docker_Celery单模型闭环.md §6-7
+    Per the project media normalization contract:
 
     - H.264 video, yuv420p, CFR
     - AAC audio, 48000 Hz

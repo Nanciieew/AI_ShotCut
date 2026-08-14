@@ -1,7 +1,6 @@
 """Keyframe extraction service — shared orchestration.
 
-Called by the in-process Workflow/Executor and
-the local pipeline (pipelines/services/omnishotcut_pipeline.py — historical name).
+Called by the in-process Workflow/Executor.
 
 Per CLAUDE.md §19: do NOT create separate local/Docker implementations.
 """

@@ -10,8 +10,7 @@ from dataclasses import dataclass, field
 class FFprobeResult:
     """Structured video metadata from ffprobe.
 
-    Corresponds to the format defined in:
-      FFmpeg标准化_OmniShotCut_Docker_Celery单模型闭环.md §5
+    Corresponds to the project media normalization contract.
     """
 
     # Video stream
@@ -79,7 +78,7 @@ class FFprobeResult:
 class NormalizationConfig:
     """Standardized output specification for video normalization.
 
-    Per: FFmpeg标准化_OmniShotCut_Docker_Celery单模型闭环.md §6
+    Per the project media normalization contract:
 
     FPS handling:
         - Prefer original video's reasonable fixed FPS

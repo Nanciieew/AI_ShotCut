@@ -38,10 +38,7 @@ models:
     requires_gpu: false
     notes: |
       5-second CPU shot detection via FFmpeg scene filter.
-      threshold=0.1 for best recall; VLM will re-score all boundaries.
-
-  # whisper: REMOVED — Doubao ASR not currently needed. See commit log for recovery.
-  # omnishotcut: REMOVED — replaced by ffmpeg_scene. See commit log for recovery.
+      threshold=0.1 for best recall; Doubao Vision re-scores boundaries for scene evidence.
 
   doubao_vision:
     task: scene_boundary_detection
@@ -59,22 +56,6 @@ models:
       Volcano Ark vision model. API key via VOLC_VISION_API_KEY.
       /v3/chat/completions, OpenAI-compatible. Adapter version 1.2.0 uses
       dynamic frame counts and bounded three-Shot batches with registry reconciliation.
-
-  vlm_scene_boundary:
-    task: scene_boundary_detection
-    description: Scores shot boundaries for location + character change via Qwen2.5-VL.
-    repository: ""
-    revision: ""
-    code_license: unknown
-    weights_license: unknown
-    dataset_license: unknown
-    commercial_use: false
-    adapter: models.vlm_boundary.adapter.VLMSceneBoundaryAdapter
-    enabled: false
-    requires_gpu: false
-    notes: |
-      Qwen2.5-VL via modelarts-maas API. API key in QWEN_VL_API_KEY env var.
-      Outputs location_character_scores.json per boundary.
 
   subtitle_semantic:
     task: subtitle_continuity_analysis

@@ -1,14 +1,11 @@
 # ============================================================
 # Movie Analysis Platform — Dependency Entry Point
 # ============================================================
-# For development (API + Worker + tools):
+# For development (API + local Workflow/Executor + tools):
 #   pip install -r requirements.txt
 #
 # For production API only:
 #   pip install -r requirements/api.txt
-#
-# For production Worker only:
-#   pip install -r requirements/worker.txt
 #
 # Individual model dependencies are in requirements/models/
 

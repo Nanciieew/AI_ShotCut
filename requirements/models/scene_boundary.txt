@@ -1,9 +1,2 @@
-# Scene Boundary model dependencies (placeholder)
-# Install when this model is enabled in registry:
-#   pip install -r requirements/models/scene_boundary.txt
-
--r ../worker.txt
-
-# TODO: Add actual Scene Boundary dependencies after repository review
-# torch>=2.0
-# transformers>=4.40
+# Scene boundary detection is provided by the configured external Vision API.
+# No additional local Python dependencies are currently required.

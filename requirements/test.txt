@@ -2,12 +2,6 @@
 # Used by CI workflow (.github/workflows/ci.yml)
 # Install: pip install -r requirements/test.txt
 
--r worker.txt
-
-# --- Model dependencies (CPU-only for CI) ---
-# OmniShotCut: install torch CPU first to avoid pulling CUDA wheels
-# In CI, use: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-
 # --- Test runners ---
 pytest>=8.0
 pytest-asyncio>=0.24

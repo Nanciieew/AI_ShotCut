@@ -193,8 +193,8 @@ class Settings(BaseSettings):
     keyframe_vlm_max_long_side: int = Field(
         default=320,
         ge=64,
-        description="VLM proxy keyframe max long side. 320×180 for Qwen VL API calls. "
-        "Reduces tokens ~10× vs 672px, 2h movie finishes in ~3min.",
+        description="Maximum long side for visual-model keyframes. "
+        "Smaller frames reduce image-token use for external Vision API calls.",
     )
 
     # ------------------------------------------------------------------
