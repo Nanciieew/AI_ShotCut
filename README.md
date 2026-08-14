@@ -24,6 +24,54 @@ upload -> normalize -> shots -> keyframes
        -> Vision -> merge/score -> FinalResult
 ```
 
+## 完整分析流程
+
+```mermaid
+flowchart TD
+    U["前端用户"] --> C["GET /api/v1/upload-config\n读取格式、大小与 project 配置"]
+    U --> UP["POST /api/v1/projects/{project_id}/videos\n流式上传视频"]
+    UP --> V["创建 Project + Video\n返回 video_id"]
+    UP --> SRC["原始视频仅保存一次\nsource URI + SHA-256"]
+
+    U --> TASK["POST /api/v1/videos/{video_id}/tasks\n评分模式与权重"]
+    V --> TASK
+    TASK --> T["创建 Task + WorkflowRun\n返回 task_id / QUEUED"]
+    T --> EX["BackgroundExecutor\n受控线程池"]
+    EX --> WF["WorkflowService"]
+
+    SRC --> N["video.normalize\nFFprobe + FFmpeg"]
+    N --> NA["Artifact: video.normalized\naudio.normalized\nvideo_probe"]
+    NA --> S["shot.detect\nFFmpegSceneAdapter"]
+    S --> SA["Artifact: shots\n功能：镜头边界检测"]
+    SA --> K["shot.extract_keyframes\nFFmpeg / KeyframeService"]
+    K --> KA["Artifact: shot_keyframes\n功能：为 Shot 提供视觉采样"]
+
+    NA --> A["audio.transcribe\nDoubaoASRAdapter"]
+    A --> AA["Artifact: subtitle_segments\n功能：带毫秒时间戳的字幕"]
+    AA --> SS["subtitle.semantic_continuity\nSubtitleSemanticAdapter + DeepSeek"]
+    SA --> SS
+    SS --> SSA["Artifact: subtitle_continuity\n功能：叙事语义连续性"]
+
+    KA --> DV["scene.score_visual_continuity\nDoubaoVisionAdapter"]
+    SA --> DV
+    DV --> DVA["Artifact: location_character_scores\n功能：地点 / 人物连续性"]
+
+    SA --> M["scene.merge_score\nWorkflowService"]
+    SSA --> M
+    DVA --> M
+    M --> SC["计算唯一 scene_score\n选择高分边界 + 最小距离约束\n合并 Shot 为 Scene"]
+    SC --> OUT["Artifact: final_scenes\n数据库：CandidateBoundary、Scene、SceneEvidence"]
+    OUT --> FR["FinalResult JSON\nTask = SUCCEEDED"]
+
+    FR --> Q["GET /api/v1/videos/{video_id}/results\n查询结果"]
+    FR --> DL["GET /api/v1/tasks/{task_id}/final-result/download\n下载 JSON"]
+
+    WF -. "每步" .-> MR["ModelRun + Artifact Manifest\n运行耗时、输入输出血缘、跨任务缓存"]
+    MR --> DB[("PostgreSQL / SQLite")]
+```
+
+模型职责：FFmpeg Scene 负责 Shot 检测；豆包 ASR 负责字幕；DeepSeek 字幕语义 Adapter 负责叙事连续性；豆包 Vision 负责地点与人物连续性。最终边界选择、Scene 合并和 `scene_score` 仅由 WorkflowService 完成，而不是由任一模型直接决定。
+
 当前不使用 Celery、Redis 或独立 Worker。API 重启时会将遗留的 PENDING、QUEUED、RUNNING 任务标为 `INTERRUPTED`；用户可用 retry API 创建新的不可变重试任务。
 
 ## 启动
